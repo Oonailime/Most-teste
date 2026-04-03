@@ -9,6 +9,8 @@ Implementação da **Parte 1** do desafio com:
 
 Também incluí um desenho objetivo da **Parte 2 (bônus)** em [docs/bonus-workflow.md](/mnt/c/Most/Most-teste/docs/bonus-workflow.md).
 
+Guia de deploy na Oracle Cloud em [docs/deploy-oracle.md](/mnt/c/Most/Most-teste/docs/deploy-oracle.md).
+
 ## Decisões técnicas
 
 - **Playwright** foi escolhido por ser robusto em navegação headless, melhor com páginas dinâmicas e adequado para execuções simultâneas com contexts isolados.
@@ -160,6 +162,20 @@ Depois envie uma requisicao com:
 - `cpf` e `localidade` são extraídos da área `dados-tabelados` da tela intermediária.
 - `nis` e `valor_recebido` são extraídos da tabela exibida após abrir `accordion-recebimentos-recursos`.
 - `tabela_detalhada` é extraída apenas após o clique em `Detalhar`.
+
+## Async e Sync
+
+O projeto hoje possui dois caminhos internos de execução do Playwright:
+
+- `async`: caminho principal, usado em Docker, WSL e ambientes compatíveis. E o fluxo otimizado com browser compartilhado, pool de `context/page` e melhor uso de concorrencia.
+- `sync`: caminho de compatibilidade local para Windows com Python 3.14. Ele existe porque, nesse ambiente, o Playwright assíncrono falhou ao inicializar subprocessos no runtime testado.
+
+Resumo pratico:
+
+- se voce rodar em Docker/WSL, o esperado e usar o caminho `async`
+- se voce rodar localmente no Windows com Python 3.14, o app cai no fallback `sync`
+
+O caminho `sync` nao e a arquitetura preferida; ele foi mantido para compatibilidade local. Se o ambiente for padronizado em Docker/WSL ou Python 3.11 a 3.13 no Windows, o projeto pode voltar a operar apenas com o fluxo `async`.
 
 ## Execução com Docker
 
