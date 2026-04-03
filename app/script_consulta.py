@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import random
 import re
 import time
 from urllib.parse import quote_plus
@@ -18,9 +19,11 @@ SEARCH_URL_TEMPLATE = (
     f"{BASE_URL}/pessoa-fisica/busca/lista?termo={{termo}}&pagina=1&tamanhoPagina=10"
 )
 ACTION_DELAY_MS = 600
+ACTION_JITTER_MS = 200
 RESULT_WAIT_MS = 1000
 RESULT_POLL_INTERVAL_MS = 2000
 DEFAULT_TIMEOUT_MS = 60000
+MAX_CONCURRENT_CONSULTAS = 2
 DEFAULT_WINDOWS_UA = (
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
     "AppleWebKit/537.36 (KHTML, like Gecko) "
@@ -58,8 +61,49 @@ def clean_table_cell(value: str, headers: list[str]) -> str:
     return cleaned
 
 
-def wait_delay(page: Page, deadline: float, delay_ms: int = ACTION_DELAY_MS) -> None:
-    page.wait_for_timeout(min(delay_ms, remaining_timeout_ms(deadline, delay_ms)))
+def human_delay_ms(base_ms: int = ACTION_DELAY_MS, jitter_ms: int = ACTION_JITTER_MS) -> int:
+    if jitter_ms <= 0:
+        return base_ms
+    lower_bound = max(150, base_ms - jitter_ms)
+    upper_bound = max(lower_bound, base_ms + jitter_ms)
+    return random.randint(lower_bound, upper_bound)
+
+
+def wait_delay(page: Page, deadline: float, delay_ms: int | None = None) -> None:
+    effective_delay_ms = human_delay_ms() if delay_ms is None else delay_ms
+    page.wait_for_timeout(min(effective_delay_ms, remaining_timeout_ms(deadline, effective_delay_ms)))
+
+
+def wait_for_locator_visible(locator: Locator, deadline: float) -> None:
+    locator.wait_for(state="visible", timeout=remaining_timeout_ms(deadline))
+
+
+def click_with_stealth_pause(page: Page, locator: Locator, deadline: float) -> None:
+    wait_for_locator_visible(locator, deadline)
+    wait_delay(page, deadline)
+    locator.click(timeout=remaining_timeout_ms(deadline))
+
+
+def wait_for_any_visible(page: Page, selectors: list[str], deadline: float) -> Locator:
+    while True:
+        for selector in selectors:
+            locator = page.locator(selector).first
+            try:
+                if locator.is_visible(timeout=min(300, remaining_timeout_ms(deadline, 300))):
+                    return locator
+            except Error:
+                continue
+        page.wait_for_timeout(min(150, remaining_timeout_ms(deadline, 150)))
+
+
+def wait_for_checkbox_state(page: Page, checkbox: Locator, checked: bool, deadline: float) -> None:
+    while True:
+        try:
+            if checkbox.is_checked() == checked:
+                return
+        except Error:
+            pass
+        page.wait_for_timeout(min(150, remaining_timeout_ms(deadline, 150)))
 
 
 def dismiss_cookie_banner(page: Page, deadline: float) -> None:
@@ -72,12 +116,47 @@ def dismiss_cookie_banner(page: Page, deadline: float) -> None:
         try:
             locator = page.locator(selector).first
             if locator.count():
-                wait_delay(page, deadline)
-                locator.click(timeout=min(2000, remaining_timeout_ms(deadline, 2000)))
-                wait_delay(page, deadline)
+                click_with_stealth_pause(page, locator, deadline)
                 return
         except Error:
             continue
+
+
+def apply_programa_social_filter(page: Page, deadline: float) -> None:
+    refine_button = page.locator("button.header[aria-controls='box-busca-refinada']").first
+    refine_box = page.locator("#box-busca-refinada").first
+    checkbox = page.locator("#beneficiarioProgramaSocial").first
+    checkbox_label = page.locator("label[for='beneficiarioProgramaSocial']").first
+
+    wait_for_locator_visible(refine_button, deadline)
+    if not refine_box.is_visible(timeout=300):
+        click_with_stealth_pause(page, refine_button, deadline)
+        wait_for_locator_visible(refine_box, deadline)
+
+    wait_for_locator_visible(checkbox, deadline)
+    if not checkbox.is_checked():
+        wait_delay(page, deadline)
+        checkbox.scroll_into_view_if_needed(timeout=remaining_timeout_ms(deadline))
+        try:
+            click_with_stealth_pause(page, checkbox_label, deadline)
+        except Error:
+            checkbox.check(force=True, timeout=remaining_timeout_ms(deadline))
+        wait_for_checkbox_state(page, checkbox, True, deadline)
+
+    consult_button = page.locator("#btnConsultarPF").first
+    with page.expect_navigation(wait_until="domcontentloaded", timeout=remaining_timeout_ms(deadline)):
+        click_with_stealth_pause(page, consult_button, deadline)
+
+    wait_for_any_visible(
+        page,
+        [
+            "#countResultados",
+            "a.link-busca-nome",
+            "a[href*='/busca/pessoa-fisica/']",
+            "text=Foram encontrados",
+        ],
+        deadline,
+    )
 
 
 def apply_stealth(page: Page) -> None:
@@ -111,7 +190,6 @@ def wait_for_results(page: Page, deadline: float) -> int:
             if count_locator.count():
                 count_text = count_locator.inner_text().strip()
                 if count_text.isdigit():
-                    page.wait_for_timeout(min(RESULT_WAIT_MS, remaining_ms))
                     return int(count_text)
         except Error:
             pass
@@ -120,11 +198,9 @@ def wait_for_results(page: Page, deadline: float) -> int:
             body_text = normalize_space(page.locator("body").inner_text())
             count_matches = re.findall(r"Foram encontrados\s+(\d+)\s+resultados", body_text)
             if count_matches:
-                page.wait_for_timeout(min(RESULT_WAIT_MS, remaining_ms))
                 return int(count_matches[0])
 
             if re.search(r"Foram encontrados\s+0\s+resultados", body_text, flags=re.IGNORECASE):
-                page.wait_for_timeout(min(RESULT_WAIT_MS, remaining_ms))
                 return 0
         except Error:
             pass
@@ -132,7 +208,6 @@ def wait_for_results(page: Page, deadline: float) -> int:
         try:
             result_links = page.locator("a.link-busca-nome, a[href*='/busca/pessoa-fisica/']")
             if result_links.count():
-                page.wait_for_timeout(min(RESULT_WAIT_MS, remaining_ms))
                 return result_links.count()
         except Error:
             pass
@@ -142,12 +217,18 @@ def wait_for_results(page: Page, deadline: float) -> int:
 
 def click_first_result(page: Page, deadline: float) -> str:
     result_link = page.locator("a.link-busca-nome, a[href*='/busca/pessoa-fisica/']").first
-    result_link.wait_for(state="visible", timeout=remaining_timeout_ms(deadline))
+    wait_for_locator_visible(result_link, deadline)
     result_name = normalize_space(result_link.inner_text())
-    wait_delay(page, deadline)
     with page.expect_navigation(wait_until="domcontentloaded", timeout=remaining_timeout_ms(deadline)):
-        result_link.click()
-    wait_delay(page, deadline)
+        click_with_stealth_pause(page, result_link, deadline)
+    wait_for_any_visible(
+        page,
+        [
+            "section.dados-tabelados",
+            "button.header[aria-controls='accordion-recebimentos-recursos']",
+        ],
+        deadline,
+    )
     if "/busca/pessoa-fisica/" not in page.url:
         raise RuntimeError("A navegacao para o detalhe da pessoa nao ocorreu.")
     return result_name
@@ -157,10 +238,16 @@ def open_recebimentos(page: Page, deadline: float) -> None:
     button = page.locator(
         "button.header[aria-controls='accordion-recebimentos-recursos']"
     ).first
-    button.wait_for(state="visible", timeout=remaining_timeout_ms(deadline))
-    wait_delay(page, deadline)
-    button.click()
-    wait_delay(page, deadline)
+    click_with_stealth_pause(page, button, deadline)
+    wait_for_any_visible(
+        page,
+        [
+            "#accordion-recebimentos-recursos table",
+            "#accordion-recebimentos-recursos a#btnDetalharBpc",
+            "#accordion-recebimentos-recursos a[href*='/beneficios/']",
+        ],
+        deadline,
+    )
 
 
 def capture_screenshot_base64(page: Page) -> str:
@@ -169,16 +256,26 @@ def capture_screenshot_base64(page: Page) -> str:
 
 
 def click_detail(page: Page, deadline: float) -> str:
-    detail_link = page.locator(
-        "a#btnDetalharBpc, a.br-button.secondary.mt-3[href*='/beneficios/']"
-    ).first
-    detail_link.wait_for(state="visible", timeout=remaining_timeout_ms(deadline))
+    detail_link = wait_for_any_visible(
+        page,
+        [
+            "a#btnDetalharBpc",
+            "a.br-button.secondary.mt-3[href*='/beneficios/']",
+        ],
+        deadline,
+    )
     href = detail_link.get_attribute("href") or ""
     expected_url_part = href if href.startswith("http") else f"{BASE_URL}{href}"
-    wait_delay(page, deadline)
     with page.expect_navigation(wait_until="domcontentloaded", timeout=remaining_timeout_ms(deadline)):
-        detail_link.click()
-    wait_delay(page, deadline)
+        click_with_stealth_pause(page, detail_link, deadline)
+    wait_for_any_visible(
+        page,
+        [
+            "#tabelaDetalheDisponibilizado",
+            "section.dados-detalhados",
+        ],
+        deadline,
+    )
     if expected_url_part and expected_url_part not in page.url and "/beneficios/" not in page.url:
         raise RuntimeError("A navegacao para o detalhe do beneficio nao ocorreu.")
     return page.url
@@ -344,6 +441,7 @@ def run_consulta_script(request: ConsultaScriptRequest) -> ConsultaScriptResulta
                 timeout=remaining_timeout_ms(deadline),
             )
             dismiss_cookie_banner(page, deadline)
+            apply_programa_social_filter(page, deadline)
 
             resultados = wait_for_results(page, deadline)
 
@@ -394,5 +492,9 @@ def run_consulta_script(request: ConsultaScriptRequest) -> ConsultaScriptResulta
 
 
 class ScriptConsultaService:
+    def __init__(self, max_concurrent_consultas: int = MAX_CONCURRENT_CONSULTAS) -> None:
+        self._semaphore = asyncio.Semaphore(max_concurrent_consultas)
+
     async def run(self, request: ConsultaScriptRequest) -> ConsultaScriptResultado:
-        return await asyncio.to_thread(run_consulta_script, request)
+        async with self._semaphore:
+            return await asyncio.to_thread(run_consulta_script, request)
