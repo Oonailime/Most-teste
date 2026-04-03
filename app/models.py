@@ -1,30 +1,45 @@
 from __future__ import annotations
 
+from typing import Any
 from typing import Literal
 
-from pydantic import AliasChoices, BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 
 class ConsultaScriptRequest(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(
+        extra="forbid",
+        json_schema_extra={
+            "examples": [
+                {
+                    "identificador": "NOME EXEMPLO",
+                }
+            ]
+        },
+    )
 
     identificador: str = Field(
         ...,
         min_length=3,
         description="Nome, CPF ou NIS utilizado na busca.",
-        examples=["Clarice Amanda Barbosa Paim"],
-        validation_alias=AliasChoices("identificador", "nome"),
+        examples=["NOME EXEMPLO"],
     )
     timeout_ms: int = Field(
-        default=90000,
+        default=60000,
         ge=10000,
         le=180000,
-        description="Tempo máximo da automação em milissegundos.",
+        description="Tempo máximo da automação em milissegundos. Padrão: 60000.",
     )
-    headless: bool = Field(default=True, description="Executa o navegador em modo headless.")
+    headless: bool = Field(
+        default=True,
+        description="Executa o navegador em modo headless. Padrão: true.",
+    )
     browser_channel: Literal["chromium", "msedge"] = Field(
         default="chromium",
-        description="Canal do navegador. Use `msedge` apenas se o Microsoft Edge estiver instalado.",
+        description=(
+            "Canal do navegador. Padrão: `chromium`. "
+            "Use `msedge` apenas se o Microsoft Edge estiver instalado."
+        ),
     )
 
     @field_validator("identificador")
@@ -34,6 +49,18 @@ class ConsultaScriptRequest(BaseModel):
         if not cleaned:
             raise ValueError("identificador não pode ser vazio")
         return cleaned
+
+    @model_validator(mode="before")
+    @classmethod
+    def reject_nome_alias(cls, data: Any) -> Any:
+        if not isinstance(data, dict) or "nome" not in data:
+            return data
+
+        nome = data.get("nome")
+        if isinstance(nome, str) and not nome.strip():
+            raise ValueError("nome não pode ser vazio; use `identificador`")
+
+        raise ValueError("o campo `nome` não é mais aceito; use `identificador`")
 
 
 class ConsultaScriptTable(BaseModel):

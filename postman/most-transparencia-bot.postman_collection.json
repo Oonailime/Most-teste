@@ -1,0 +1,388 @@
+{
+  "info": {
+    "_postman_id": "6ca332de-33d2-4483-96dc-f27f09e0f319",
+    "name": "Most Transparencia Bot",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+    "description": "Collection para validar a API do robô do Portal da Transparência."
+  },
+  "item": [
+    {
+      "name": "Healthcheck",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test(\"Status code is 200\", function () {",
+              "  pm.response.to.have.status(200);",
+              "});",
+              "",
+              "const json = pm.response.json();",
+              "",
+              "pm.test(\"Health status is ok\", function () {",
+              "  pm.expect(json.status).to.eql(\"ok\");",
+              "});"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{base_url}}/health",
+          "host": [
+            "{{base_url}}"
+          ],
+          "path": [
+            "health"
+          ]
+        }
+      }
+    },
+    {
+      "name": "Consulta - Sucesso por Nome",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test(\"Status code is 200\", function () {",
+              "  pm.response.to.have.status(200);",
+              "});",
+              "",
+              "const json = pm.response.json();",
+              "",
+              "pm.test(\"Retorna status conhecido\", function () {",
+              "  pm.expect([\"sucesso\", \"sem_resultados\"]).to.include(json.status);",
+              "});",
+              "",
+              "pm.test(\"Possui estrutura principal\", function () {",
+              "  pm.expect(json).to.have.property(\"nome_busca\");",
+              "  pm.expect(json).to.have.property(\"url_busca\");",
+              "  pm.expect(json).to.have.property(\"status\");",
+              "});",
+              "",
+              "if (json.status === \"sucesso\") {",
+              "  pm.test(\"Sucesso contém dados detalhados\", function () {",
+              "    pm.expect(json.resultado_clicado).to.be.a(\"string\").and.not.empty;",
+              "    pm.expect(json.url_detalhe).to.be.a(\"string\").and.include(\"portaldatransparencia.gov.br\");",
+              "    pm.expect(json.tabela_detalhada).to.be.an(\"object\");",
+              "  });",
+              "}"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"identificador\": \"Maria\"\n}"
+        },
+        "url": {
+          "raw": "{{base_url}}/consulta-script",
+          "host": [
+            "{{base_url}}"
+          ],
+          "path": [
+            "consulta-script"
+          ]
+        }
+      }
+    },
+    {
+      "name": "Consulta - Sucesso por Nome 2",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test(\"Status code is 200\", function () {",
+              "  pm.response.to.have.status(200);",
+              "});",
+              "",
+              "const json = pm.response.json();",
+              "",
+              "pm.test(\"Retorno possui status\", function () {",
+              "  pm.expect(json.status).to.be.a(\"string\");",
+              "});",
+              "",
+              "pm.test(\"Retorna estrutura de script\", function () {",
+              "  pm.expect(json.nome_busca).to.be.a(\"string\").and.not.empty;",
+              "  pm.expect(json.url_busca).to.include(\"portaldatransparencia.gov.br\");",
+              "});"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"identificador\": \"José\"\n}"
+        },
+        "url": {
+          "raw": "{{base_url}}/consulta-script",
+          "host": [
+            "{{base_url}}"
+          ],
+          "path": [
+            "consulta-script"
+          ]
+        }
+      }
+    },
+    {
+      "name": "Consulta - A Anne Christine Silva Ribeiro",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test(\"Status code is 200\", function () {",
+              "  pm.response.to.have.status(200);",
+              "});",
+              "",
+              "const json = pm.response.json();",
+              "",
+              "pm.test(\"Retorno possui status\", function () {",
+              "  pm.expect(json.status).to.be.a(\"string\");",
+              "});",
+              "",
+              "pm.test(\"Retorna estrutura de script\", function () {",
+              "  pm.expect(json.nome_busca).to.be.a(\"string\").and.not.empty;",
+              "  pm.expect(json.url_busca).to.include(\"portaldatransparencia.gov.br\");",
+              "});"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"identificador\": \"A Anne Christine Silva Ribeiro\"\n}"
+        },
+        "url": {
+          "raw": "{{base_url}}/consulta-script",
+          "host": [
+            "{{base_url}}"
+          ],
+          "path": [
+            "consulta-script"
+          ]
+        }
+      }
+    },
+    {
+      "name": "Consulta - Modo Visível",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test(\"Status code is 200\", function () {",
+              "  pm.response.to.have.status(200);",
+              "});",
+              "",
+              "const json = pm.response.json();",
+              "",
+              "pm.test(\"Retorno possui status conhecido\", function () {",
+              "  pm.expect([\"sucesso\", \"sem_resultados\"]).to.include(json.status);",
+              "});"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"identificador\": \"João\",\n  \"headless\": false\n}"
+        },
+        "url": {
+          "raw": "{{base_url}}/consulta-script",
+          "host": [
+            "{{base_url}}"
+          ],
+          "path": [
+            "consulta-script"
+          ]
+        }
+      }
+    },
+    {
+      "name": "Consulta - Joaquim",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test(\"Status code is 200\", function () {",
+              "  pm.response.to.have.status(200);",
+              "});",
+              "",
+              "const json = pm.response.json();",
+              "",
+              "pm.test(\"Retorno possui status\", function () {",
+              "  pm.expect(json.status).to.be.a(\"string\");",
+              "});"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"identificador\": \"Joaquim\"\n}"
+        },
+        "url": {
+          "raw": "{{base_url}}/consulta-script",
+          "host": [
+            "{{base_url}}"
+          ],
+          "path": [
+            "consulta-script"
+          ]
+        }
+      }
+    },
+    {
+      "name": "Consulta - Rosa",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test(\"Status code is 200\", function () {",
+              "  pm.response.to.have.status(200);",
+              "});",
+              "",
+              "const json = pm.response.json();",
+              "",
+              "pm.test(\"Retorno possui status\", function () {",
+              "  pm.expect(json.status).to.be.a(\"string\");",
+              "});"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"identificador\": \"Rosa\"\n}"
+        },
+        "url": {
+          "raw": "{{base_url}}/consulta-script",
+          "host": [
+            "{{base_url}}"
+          ],
+          "path": [
+            "consulta-script"
+          ]
+        }
+      }
+    },
+    {
+      "name": "Consulta - Erro Nome Inexistente",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test(\"Status code is 200\", function () {",
+              "  pm.response.to.have.status(200);",
+              "});",
+              "",
+              "const json = pm.response.json();",
+              "",
+              "pm.test(\"Retorna sem resultados\", function () {",
+              "  pm.expect(json.status).to.eql(\"sem_resultados\");",
+              "  pm.expect(json.detalhe_portal).to.include(\"Foram encontrados 0 resultados\");",
+              "});"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"identificador\": \"{{nome_inexistente}}\"\n}"
+        },
+        "url": {
+          "raw": "{{base_url}}/consulta-script",
+          "host": [
+            "{{base_url}}"
+          ],
+          "path": [
+            "consulta-script"
+          ]
+        }
+      }
+    }
+  ],
+  "variable": [
+    {
+      "key": "base_url",
+      "value": "http://127.0.0.1:8000"
+    },
+    {
+      "key": "nome_inexistente",
+      "value": "NOME INEXISTENTE XYZ TESTE"
+    }
+  ]
+}

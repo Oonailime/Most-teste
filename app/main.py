@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+import asyncio
 import logging
+import sys
+from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, HTTPException
-from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
 
 try:
     from app.models import ConsultaScriptRequest, ConsultaScriptResultado
@@ -14,6 +16,26 @@ except ModuleNotFoundError:
 
 TIMEOUT_MESSAGE = "Não foi possível retornar os dados no tempo de resposta solicitado"
 
+if sys.platform == "win32" and hasattr(asyncio, "WindowsProactorEventLoopPolicy"):
+    asyncio.set_event_loop_policy(asyncio.WindowsProactorEventLoopPolicy())
+
+script_consulta_service = ScriptConsultaService()
+logger = logging.getLogger(__name__)
+
+
+@asynccontextmanager
+async def lifespan(_: FastAPI):
+    if sys.platform == "win32" and sys.version_info >= (3, 14):
+        raise RuntimeError(
+            "Windows com Python 3.14 nao e suportado por este projeto no runtime atual do "
+            "Playwright. Use Python 3.11, 3.12 ou 3.13, ou execute via Docker/WSL."
+        )
+    await script_consulta_service.startup()
+    try:
+        yield
+    finally:
+        await script_consulta_service.shutdown()
+
 app = FastAPI(
     title="Most Transparencia Bot",
     version="0.1.0",
@@ -21,10 +43,8 @@ app = FastAPI(
         "API para executar o robô Playwright no Portal da Transparência e retornar "
         "os dados estruturados da consulta."
     ),
+    lifespan=lifespan,
 )
-
-script_consulta_service = ScriptConsultaService()
-logger = logging.getLogger(__name__)
 
 
 @app.get("/health")
@@ -41,7 +61,7 @@ async def healthcheck() -> dict[str, str]:
 async def consultar_pessoa_script(request: ConsultaScriptRequest) -> ConsultaScriptResultado:
     try:
         return await script_consulta_service.run(request)
-    except (TimeoutError, PlaywrightTimeoutError) as exc:
+    except TimeoutError as exc:
         raise HTTPException(
             status_code=504,
             detail={
