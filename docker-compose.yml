@@ -5,7 +5,7 @@ services:
       dockerfile: Dockerfile
     image: most-transparencia-bot:local
     ports:
-      - "8000:8000"
+      - "${HOST_PORT:-8000}:8000"
     environment:
       MAX_CONCURRENT_CONSULTAS: "6"
       BROWSER_CHANNEL: "chromium"
