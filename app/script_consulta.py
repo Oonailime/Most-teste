@@ -17,7 +17,7 @@ BASE_URL = "https://portaldatransparencia.gov.br"
 SEARCH_URL_TEMPLATE = (
     f"{BASE_URL}/pessoa-fisica/busca/lista?termo={{termo}}&pagina=1&tamanhoPagina=10"
 )
-ACTION_DELAY_MS = 2500
+ACTION_DELAY_MS = 600
 RESULT_WAIT_MS = 1000
 RESULT_POLL_INTERVAL_MS = 2000
 DEFAULT_TIMEOUT_MS = 60000
