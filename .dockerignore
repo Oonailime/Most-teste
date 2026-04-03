@@ -1,0 +1,13 @@
+.git
+.gitignore
+.codex
+.venv
+.venv-linux
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache
+postman
+docs
+scripts
