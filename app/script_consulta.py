@@ -3,9 +3,10 @@ from __future__ import annotations
 import asyncio
 import base64
 import re
+import time
 from urllib.parse import quote_plus
 
-from playwright.sync_api import Error, Page, sync_playwright
+from playwright.sync_api import Error, Locator, Page, TimeoutError as PlaywrightTimeoutError, sync_playwright
 
 try:
     from app.models import ConsultaScriptRequest, ConsultaScriptResultado
@@ -27,6 +28,17 @@ DEFAULT_WINDOWS_UA = (
 )
 
 
+def monotonic_deadline(timeout_ms: int) -> float:
+    return time.monotonic() + (timeout_ms / 1000)
+
+
+def remaining_timeout_ms(deadline: float, fallback_ms: int = DEFAULT_TIMEOUT_MS) -> int:
+    remaining_ms = int((deadline - time.monotonic()) * 1000)
+    if remaining_ms <= 0:
+        raise TimeoutError("Não foi possível retornar os dados no tempo de resposta solicitado")
+    return min(remaining_ms, fallback_ms)
+
+
 def normalize_space(value: str) -> str:
     return " ".join(value.split())
 
@@ -46,11 +58,11 @@ def clean_table_cell(value: str, headers: list[str]) -> str:
     return cleaned
 
 
-def wait_delay(page: Page, delay_ms: int = ACTION_DELAY_MS) -> None:
-    page.wait_for_timeout(delay_ms)
+def wait_delay(page: Page, deadline: float, delay_ms: int = ACTION_DELAY_MS) -> None:
+    page.wait_for_timeout(min(delay_ms, remaining_timeout_ms(deadline, delay_ms)))
 
 
-def dismiss_cookie_banner(page: Page) -> None:
+def dismiss_cookie_banner(page: Page, deadline: float) -> None:
     selectors = [
         "button:has-text('Aceitar')",
         "button:has-text('Concordo')",
@@ -60,9 +72,9 @@ def dismiss_cookie_banner(page: Page) -> None:
         try:
             locator = page.locator(selector).first
             if locator.count():
-                wait_delay(page)
-                locator.click(timeout=2000)
-                wait_delay(page)
+                wait_delay(page, deadline)
+                locator.click(timeout=min(2000, remaining_timeout_ms(deadline, 2000)))
+                wait_delay(page, deadline)
                 return
         except Error:
             continue
@@ -91,14 +103,15 @@ def apply_stealth(page: Page) -> None:
     )
 
 
-def wait_for_results(page: Page) -> int:
-    for _ in range(DEFAULT_TIMEOUT_MS // 1000):
+def wait_for_results(page: Page, deadline: float) -> int:
+    while True:
+        remaining_ms = remaining_timeout_ms(deadline)
         try:
             count_locator = page.locator("#countResultados").first
             if count_locator.count():
                 count_text = count_locator.inner_text().strip()
                 if count_text.isdigit():
-                    page.wait_for_timeout(RESULT_WAIT_MS)
+                    page.wait_for_timeout(min(RESULT_WAIT_MS, remaining_ms))
                     return int(count_text)
         except Error:
             pass
@@ -107,11 +120,11 @@ def wait_for_results(page: Page) -> int:
             body_text = normalize_space(page.locator("body").inner_text())
             count_matches = re.findall(r"Foram encontrados\s+(\d+)\s+resultados", body_text)
             if count_matches:
-                page.wait_for_timeout(RESULT_WAIT_MS)
+                page.wait_for_timeout(min(RESULT_WAIT_MS, remaining_ms))
                 return int(count_matches[0])
 
             if re.search(r"Foram encontrados\s+0\s+resultados", body_text, flags=re.IGNORECASE):
-                page.wait_for_timeout(RESULT_WAIT_MS)
+                page.wait_for_timeout(min(RESULT_WAIT_MS, remaining_ms))
                 return 0
         except Error:
             pass
@@ -119,37 +132,35 @@ def wait_for_results(page: Page) -> int:
         try:
             result_links = page.locator("a.link-busca-nome, a[href*='/busca/pessoa-fisica/']")
             if result_links.count():
-                page.wait_for_timeout(RESULT_WAIT_MS)
+                page.wait_for_timeout(min(RESULT_WAIT_MS, remaining_ms))
                 return result_links.count()
         except Error:
             pass
 
-        page.wait_for_timeout(RESULT_POLL_INTERVAL_MS)
-
-    raise TimeoutError("Tempo excedido aguardando resultados da busca.")
+        page.wait_for_timeout(min(RESULT_POLL_INTERVAL_MS, remaining_ms))
 
 
-def click_first_result(page: Page) -> str:
+def click_first_result(page: Page, deadline: float) -> str:
     result_link = page.locator("a.link-busca-nome, a[href*='/busca/pessoa-fisica/']").first
-    result_link.wait_for(state="visible", timeout=DEFAULT_TIMEOUT_MS)
+    result_link.wait_for(state="visible", timeout=remaining_timeout_ms(deadline))
     result_name = normalize_space(result_link.inner_text())
-    wait_delay(page)
-    with page.expect_navigation(wait_until="domcontentloaded", timeout=DEFAULT_TIMEOUT_MS):
+    wait_delay(page, deadline)
+    with page.expect_navigation(wait_until="domcontentloaded", timeout=remaining_timeout_ms(deadline)):
         result_link.click()
-    wait_delay(page)
+    wait_delay(page, deadline)
     if "/busca/pessoa-fisica/" not in page.url:
         raise RuntimeError("A navegacao para o detalhe da pessoa nao ocorreu.")
     return result_name
 
 
-def open_recebimentos(page: Page) -> None:
+def open_recebimentos(page: Page, deadline: float) -> None:
     button = page.locator(
         "button.header[aria-controls='accordion-recebimentos-recursos']"
     ).first
-    button.wait_for(state="visible", timeout=DEFAULT_TIMEOUT_MS)
-    wait_delay(page)
+    button.wait_for(state="visible", timeout=remaining_timeout_ms(deadline))
+    wait_delay(page, deadline)
     button.click()
-    wait_delay(page)
+    wait_delay(page, deadline)
 
 
 def capture_screenshot_base64(page: Page) -> str:
@@ -157,50 +168,20 @@ def capture_screenshot_base64(page: Page) -> str:
     return base64.b64encode(image_bytes).decode("utf-8")
 
 
-def click_detail(page: Page) -> str:
+def click_detail(page: Page, deadline: float) -> str:
     detail_link = page.locator(
         "a#btnDetalharBpc, a.br-button.secondary.mt-3[href*='/beneficios/']"
     ).first
-    detail_link.wait_for(state="visible", timeout=DEFAULT_TIMEOUT_MS)
+    detail_link.wait_for(state="visible", timeout=remaining_timeout_ms(deadline))
     href = detail_link.get_attribute("href") or ""
     expected_url_part = href if href.startswith("http") else f"{BASE_URL}{href}"
-    wait_delay(page)
-    with page.expect_navigation(wait_until="domcontentloaded", timeout=DEFAULT_TIMEOUT_MS):
+    wait_delay(page, deadline)
+    with page.expect_navigation(wait_until="domcontentloaded", timeout=remaining_timeout_ms(deadline)):
         detail_link.click()
-    wait_delay(page)
+    wait_delay(page, deadline)
     if expected_url_part and expected_url_part not in page.url and "/beneficios/" not in page.url:
         raise RuntimeError("A navegacao para o detalhe do beneficio nao ocorreu.")
     return page.url
-
-
-def extract_section_data(page: Page) -> dict[str, object]:
-    section = page.locator("section.dados-detalhados").first
-    section.wait_for(state="visible", timeout=DEFAULT_TIMEOUT_MS)
-    raw_text = normalize_space(section.inner_text())
-    lines = [line.strip() for line in section.inner_text().splitlines() if line.strip()]
-
-    structured_rows: list[dict[str, str]] = []
-    current_row: dict[str, str] = {}
-    for line in lines:
-        if ":" in line:
-            key, value = line.split(":", 1)
-            structured_rows.append({"campo": normalize_space(key), "valor": normalize_space(value)})
-            current_row = {}
-        else:
-            if not current_row:
-                current_row = {"campo": line, "valor": ""}
-                structured_rows.append(current_row)
-            else:
-                if current_row["valor"]:
-                    current_row["valor"] = f"{current_row['valor']} {normalize_space(line)}".strip()
-                else:
-                    current_row["valor"] = normalize_space(line)
-
-    return {
-        "url": page.url,
-        "texto_bruto": raw_text,
-        "campos": structured_rows,
-    }
 
 
 def slugify_label(value: str) -> str:
@@ -208,13 +189,33 @@ def slugify_label(value: str) -> str:
     return raw.strip("_") or "campo"
 
 
+def find_summary_value(text: str, labels: list[str], stop_labels: list[str] | None = None) -> str | None:
+    normalized_text = normalize_space(text)
+    escaped_labels = "|".join(re.escape(label) for label in labels)
+    stop_pattern = r"|".join(re.escape(label) for label in (stop_labels or []))
+    pattern = (
+        rf"(?:{escaped_labels})\s*:?\s*(.+?)"
+        rf"(?=\s+(?:{stop_pattern})\b|\s*$)"
+    )
+    match = re.search(pattern, normalized_text, flags=re.IGNORECASE)
+    if not match:
+        return None
+    value = normalize_space(match.group(1))
+    return value or None
+
+
 def extract_person_summary(page: Page) -> dict[str, str | None]:
     sections = page.locator("section.dados-tabelados")
     count = sections.count()
     data: dict[str, str] = {}
+    section_texts: list[str] = []
 
     for index in range(count):
         section = sections.nth(index)
+        try:
+            section_texts.append(normalize_space(section.inner_text()))
+        except Error:
+            pass
         rows = section.locator("li, tr, .row, .col, .dados-tabelados__item")
         row_count = rows.count()
         for row_index in range(row_count):
@@ -228,17 +229,26 @@ def extract_person_summary(page: Page) -> dict[str, str | None]:
             value = texts[1] if len(texts) == 2 else " ".join(texts[1:])
             data[key] = value
 
+    combined_text = " ".join(section_texts)
+    cpf = data.get("cpf") or find_summary_value(
+        combined_text,
+        ["cpf"],
+        ["localidade", "imprimir"],
+    )
+    localidade = data.get("localidade") or find_summary_value(
+        combined_text,
+        ["localidade"],
+        ["imprimir"],
+    )
+
     return {
         "nome": data.get("nome"),
-        "cpf": data.get("cpf"),
-        "localidade": data.get("localidade"),
+        "cpf": cpf,
+        "localidade": localidade,
     }
 
 
-def extract_detail_table(page: Page) -> dict[str, object]:
-    table = page.locator("#tabelaDetalheDisponibilizado").first
-    table.wait_for(state="visible", timeout=DEFAULT_TIMEOUT_MS)
-
+def extract_table_rows(table: Locator) -> tuple[list[str], list[dict[str, str]]]:
     headers = [
         normalize_space(item)
         for item in table.locator("thead th").all_inner_texts()
@@ -263,6 +273,40 @@ def extract_detail_table(page: Page) -> dict[str, object]:
         else:
             rows.append({f"coluna_{position + 1}": value for position, value in enumerate(values)})
 
+    return headers, rows
+
+
+def get_first_present(data: dict[str, str], candidates: list[str]) -> str | None:
+    normalized = {normalize_space(key).casefold(): value for key, value in data.items()}
+    for candidate in candidates:
+        value = normalized.get(candidate.casefold())
+        if value:
+            return value
+    return None
+
+
+def extract_recebimento_summary(page: Page, deadline: float) -> dict[str, str | None]:
+    accordion = page.locator("#accordion-recebimentos-recursos").first
+    accordion.wait_for(state="visible", timeout=remaining_timeout_ms(deadline))
+    table = accordion.locator("table").first
+    table.wait_for(state="visible", timeout=remaining_timeout_ms(deadline))
+    _, rows = extract_table_rows(table)
+    first_row = rows[0] if rows else {}
+
+    return {
+        "nis": get_first_present(first_row, ["NIS"]),
+        "valor_recebido": get_first_present(
+            first_row,
+            ["Valor Recebido", "Valor", "Valor do benefício", "Valor do beneficio"],
+        ),
+    }
+
+
+def extract_detail_table(page: Page, deadline: float) -> dict[str, object]:
+    table = page.locator("#tabelaDetalheDisponibilizado").first
+    table.wait_for(state="visible", timeout=remaining_timeout_ms(deadline))
+    headers, rows = extract_table_rows(table)
+
     return {
         "cabecalhos": headers,
         "linhas": rows,
@@ -270,6 +314,7 @@ def extract_detail_table(page: Page) -> dict[str, object]:
 
 
 def run_consulta_script(request: ConsultaScriptRequest) -> ConsultaScriptResultado:
+    deadline = monotonic_deadline(request.timeout_ms)
     with sync_playwright() as playwright:
         browser = playwright.chromium.launch(
             channel=request.browser_channel,
@@ -287,50 +332,62 @@ def run_consulta_script(request: ConsultaScriptRequest) -> ConsultaScriptResulta
         )
         page = context.new_page()
         apply_stealth(page)
-        page.set_default_timeout(DEFAULT_TIMEOUT_MS)
+        page.set_default_timeout(request.timeout_ms)
 
         try:
-            termo = quote_plus(request.nome)
+            termo = quote_plus(request.identificador)
             search_url = SEARCH_URL_TEMPLATE.format(termo=termo)
 
-            page.goto(search_url, wait_until="domcontentloaded")
-            dismiss_cookie_banner(page)
+            page.goto(
+                search_url,
+                wait_until="domcontentloaded",
+                timeout=remaining_timeout_ms(deadline),
+            )
+            dismiss_cookie_banner(page, deadline)
 
-            resultados = wait_for_results(page)
+            resultados = wait_for_results(page, deadline)
 
             if resultados == 0:
                 return ConsultaScriptResultado(
                     status="sem_resultados",
-                    nome_busca=request.nome,
+                    nome_busca=request.identificador,
                     url_busca=search_url,
                     evidencia_base64=capture_screenshot_base64(page),
-                    mensagem=f'O nome pesquisado "{request.nome}" não possui nenhum benefício registrado.',
-                    detalhe_portal=f'Foram encontrados 0 resultados para o termo "{request.nome}".',
+                    mensagem=(
+                        f'O identificador pesquisado "{request.identificador}" '
+                        "não possui nenhum benefício registrado."
+                    ),
+                    detalhe_portal=(
+                        f'Foram encontrados 0 resultados para o termo "{request.identificador}".'
+                    ),
                 )
 
-            nome_resultado = click_first_result(page)
+            nome_resultado = click_first_result(page, deadline)
             person_summary = extract_person_summary(page)
+
+            open_recebimentos(page, deadline)
+            recebimento_summary = extract_recebimento_summary(page, deadline)
             evidencia_base64 = capture_screenshot_base64(page)
 
-            open_recebimentos(page)
-
-            url_detalhe = click_detail(page)
-            dados = extract_section_data(page)
-            tabela_detalhada = extract_detail_table(page)
+            url_detalhe = click_detail(page, deadline)
+            tabela_detalhada = extract_detail_table(page, deadline)
 
             return ConsultaScriptResultado(
                 status="sucesso",
-                nome=person_summary["nome"],
+                nome=nome_resultado,
+                nis=recebimento_summary["nis"],
                 cpf=person_summary["cpf"],
                 localidade=person_summary["localidade"],
-                nome_busca=request.nome,
+                valor_recebido=recebimento_summary["valor_recebido"],
+                nome_busca=request.identificador,
                 resultado_clicado=nome_resultado,
                 url_busca=search_url,
                 url_detalhe=url_detalhe,
                 evidencia_base64=evidencia_base64,
-                #dados_detalhados=dados,
                 tabela_detalhada=tabela_detalhada,
             )
+        except PlaywrightTimeoutError as exc:
+            raise TimeoutError("Não foi possível retornar os dados no tempo de resposta solicitado") from exc
         finally:
             context.close()
             browser.close()
@@ -338,7 +395,4 @@ def run_consulta_script(request: ConsultaScriptRequest) -> ConsultaScriptResulta
 
 class ScriptConsultaService:
     async def run(self, request: ConsultaScriptRequest) -> ConsultaScriptResultado:
-        return await asyncio.wait_for(
-            asyncio.to_thread(run_consulta_script, request),
-            timeout=request.timeout_ms / 1000,
-        )
+        return await asyncio.to_thread(run_consulta_script, request)

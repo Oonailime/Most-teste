@@ -3,6 +3,7 @@ from __future__ import annotations
 import logging
 
 from fastapi import FastAPI, HTTPException
+from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
 
 try:
     from app.models import ConsultaScriptRequest, ConsultaScriptResultado
@@ -40,7 +41,7 @@ async def healthcheck() -> dict[str, str]:
 async def consultar_pessoa_script(request: ConsultaScriptRequest) -> ConsultaScriptResultado:
     try:
         return await script_consulta_service.run(request)
-    except TimeoutError as exc:
+    except (TimeoutError, PlaywrightTimeoutError) as exc:
         raise HTTPException(
             status_code=504,
             detail={
@@ -49,11 +50,13 @@ async def consultar_pessoa_script(request: ConsultaScriptRequest) -> ConsultaScr
             },
         ) from exc
     except Exception as exc:
-        logger.exception("Falha no fluxo do script para nome=%s", request.nome)
+        logger.exception(
+            "Falha no fluxo do script para identificador=%s", request.identificador
+        )
         message = str(exc).strip() or "Falha inesperada na automação"
         if "Executable doesn't exist" in message or "browserType.launch" in message:
             message = (
-                "Playwright/Chromium ou Edge não instalado. Execute: "
+                "Playwright/Chromium não instalado. Execute: "
                 "python -m playwright install chromium"
             )
         raise HTTPException(
