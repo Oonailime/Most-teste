@@ -378,6 +378,14 @@
   "variable": [
     {
       "key": "base_url",
+      "value": "{{base_url_local}}"
+    },
+    {
+      "key": "base_url_local",
+      "value": "http://127.0.0.1:8001"
+    },
+    {
+      "key": "base_url_docker",
       "value": "http://127.0.0.1:8000"
     },
     {

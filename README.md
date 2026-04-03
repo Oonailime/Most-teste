@@ -16,6 +16,7 @@ Também incluí um desenho objetivo da **Parte 2 (bônus)** em [docs/bonus-workf
 - A automação foi escrita com **seletores defensivos e fallbacks**, porque o Portal da Transparência pode variar discretamente na estrutura HTML.
 - O fluxo usa **esperas por estado visível e navegação**, com um jitter curto entre ações em vez de sleeps longos fixos.
 - O processo reutiliza um browser Playwright por modo (`headless=true` e, localmente, `headless=false`) e isola cada requisição em seu próprio `context/page`.
+- No Windows com Python 3.14, o app usa um fallback local com Playwright síncrono por requisição para contornar a incompatibilidade do runtime assíncrono.
 - A API limita a concorrência local a **6 consultas simultâneas por processo** por pool de browser. O valor pode ser alterado via `MAX_CONCURRENT_CONSULTAS`.
 
 ## Estrutura
@@ -49,13 +50,13 @@ python3 -m playwright install chromium
 ## Execução local
 
 ```bash
-uvicorn app.main:app --reload
+uvicorn app.main:app --reload --port 8001
 ```
 
 Com configuração explícita:
 
 ```bash
-MAX_CONCURRENT_CONSULTAS=6 BROWSER_CHANNEL=chromium uvicorn app.main:app --reload
+MAX_CONCURRENT_CONSULTAS=6 BROWSER_CHANNEL=chromium uvicorn app.main:app --reload --port 8001
 ```
 
 Endpoints:
@@ -67,7 +68,7 @@ Endpoints:
 ## Exemplo de requisição
 
 ```bash
-curl -X POST http://127.0.0.1:8000/consulta-script \
+curl -X POST http://127.0.0.1:8001/consulta-script \
   -H "Content-Type: application/json" \
   -d '{
     "identificador": "A Anne Christine Silva Ribeiro"
@@ -120,7 +121,7 @@ O navegador padrão é `chromium`, que também é o browser instalado na imagem 
 Para depurar localmente com navegador visivel:
 
 ```bash
-MAX_CONCURRENT_CONSULTAS=2 BROWSER_CHANNEL=chromium ALLOW_HEADFUL_BROWSER=true uvicorn app.main:app --reload
+MAX_CONCURRENT_CONSULTAS=2 BROWSER_CHANNEL=chromium ALLOW_HEADFUL_BROWSER=true uvicorn app.main:app --reload --port 8001
 ```
 
 Depois envie uma requisicao com:
@@ -173,9 +174,28 @@ Ou com Compose:
 docker compose up --build
 ```
 
+Convencao recomendada:
+
+- Docker em `http://127.0.0.1:8000`
+- API local em `http://127.0.0.1:8001`
+
+Se quiser rodar Docker e API local ao mesmo tempo, use:
+
+```bash
+HOST_PORT=8000 docker compose up --build
+```
+
+e localmente:
+
+```bash
+python -m uvicorn app.main:app --host 127.0.0.1 --port 8001
+```
+
+O `--reload` nao fixa a porta `8000`. Ele apenas habilita recarga automatica. Se voce nao informar `--port`, o Uvicorn usa `8000` por padrao.
+
 O container sobe com tudo que a API precisa, incluindo Python, dependencias e Chromium do Playwright. Isso permite testar do mesmo jeito no Windows ou no WSL, desde que o Docker esteja funcionando no host.
 
-No Windows nativo, evite Python 3.14 para esta API. O Playwright assíncrono do projeto está validado para Python 3.11 a 3.13. Se estiver com Python 3.14 no host Windows, prefira Docker/WSL ou instale Python 3.12/3.13 para rodar localmente.
+No Windows nativo com Python 3.14, a API agora funciona em modo local por um fallback síncrono do Playwright. Esse caminho existe para compatibilidade local e pode consumir mais recursos do que o fluxo assíncrono com browser compartilhado usado em Docker/WSL e em Python 3.11 a 3.13.
 
 Teste rapido apos subir o container:
 
@@ -192,8 +212,17 @@ Configuracoes uteis no container:
 - `MAX_CONCURRENT_CONSULTAS`: controla o tamanho do pool de consultas simultaneas
 - `BROWSER_CHANNEL`: canal do browser compartilhado pelo processo; padrao `chromium`
 - `ALLOW_HEADFUL_BROWSER`: permite requisicoes com `headless=false`; padrao `false`
+- `HOST_PORT`: porta publicada no host para acessar o container; padrao `8000`
 
 No `docker-compose.yml`, `ALLOW_HEADFUL_BROWSER` fica definido como `false`.
+
+Na collection do Postman:
+
+- `base_url_docker`: `http://127.0.0.1:8000`
+- `base_url_local`: `http://127.0.0.1:8001`
+- `base_url`: variavel ativa usada pelas requests
+
+Para testar Docker, deixe `base_url={{base_url_docker}}`. Para testar local, troque para `base_url={{base_url_local}}`.
 
 ## Benchmark de memoria
 

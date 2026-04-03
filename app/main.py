@@ -25,11 +25,6 @@ logger = logging.getLogger(__name__)
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
-    if sys.platform == "win32" and sys.version_info >= (3, 14):
-        raise RuntimeError(
-            "Windows com Python 3.14 nao e suportado por este projeto no runtime atual do "
-            "Playwright. Use Python 3.11, 3.12 ou 3.13, ou execute via Docker/WSL."
-        )
     await script_consulta_service.startup()
     try:
         yield
