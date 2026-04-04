@@ -373,6 +373,140 @@
           ]
         }
       }
+    },
+    {
+      "name": "Servidor Oracle",
+      "item": [
+        {
+          "name": "Healthcheck - Servidor",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Status code is 200\", function () {",
+                  "  pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "const json = pm.response.json();",
+                  "",
+                  "pm.test(\"Health status is ok\", function () {",
+                  "  pm.expect(json.status).to.eql(\"ok\");",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url_server}}/health",
+              "host": [
+                "{{base_url_server}}"
+              ],
+              "path": [
+                "health"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Consulta - Servidor por Nome",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Status code is 200\", function () {",
+                  "  pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "const json = pm.response.json();",
+                  "",
+                  "pm.test(\"Retorna status conhecido\", function () {",
+                  "  pm.expect([\"sucesso\", \"sem_resultados\"]).to.include(json.status);",
+                  "});",
+                  "",
+                  "pm.test(\"Possui estrutura principal\", function () {",
+                  "  pm.expect(json).to.have.property(\"nome_busca\");",
+                  "  pm.expect(json).to.have.property(\"url_busca\");",
+                  "  pm.expect(json).to.have.property(\"status\");",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"identificador\": \"Maria\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url_server}}/consulta-script",
+              "host": [
+                "{{base_url_server}}"
+              ],
+              "path": [
+                "consulta-script"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Consulta - Servidor Nome Inexistente",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Status code is 200\", function () {",
+                  "  pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "const json = pm.response.json();",
+                  "",
+                  "pm.test(\"Retorna sem resultados ou sucesso\", function () {",
+                  "  pm.expect([\"sem_resultados\", \"sucesso\"]).to.include(json.status);",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"identificador\": \"{{nome_inexistente}}\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url_server}}/consulta-script",
+              "host": [
+                "{{base_url_server}}"
+              ],
+              "path": [
+                "consulta-script"
+              ]
+            }
+          }
+        }
+      ]
     }
   ],
   "variable": [
@@ -387,6 +521,10 @@
     {
       "key": "base_url_docker",
       "value": "http://127.0.0.1:8000"
+    },
+    {
+      "key": "base_url_server",
+      "value": "http://137.131.226.149:8000"
     },
     {
       "key": "nome_inexistente",
