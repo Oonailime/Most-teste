@@ -3,11 +3,220 @@
 Implementação da **Parte 1** do desafio com:
 
 - robô em **Python + Playwright** para consulta no Portal da Transparência;
-- **API FastAPI** para disparar o robô e expor documentação Swagger/OpenAPI;
+- **API FastAPI** para disparar o robô e expor documentação Swagger/OpenAPI em /docs;
 - captura de screenshot do fluxo em base64;
 - coleta dos dados principais do beneficiário e da tabela detalhada do benefício.
 
-Também incluí um desenho objetivo da **Parte 2 (bônus)** em [docs/bonus-workflow.md](/mnt/c/Most/Most-teste/docs/bonus-workflow.md).
+Também incluí o desenho e a configuração final da **Parte 2 (bônus)** em [docs/bonus-workflow.md](/mnt/c/Most/Most-teste/docs/bonus-workflow.md), incluindo o formulário web publicado no Activepieces.
+
+## Algoritmo da automação
+
+O robô da Parte 1 segue este fluxo:
+
+1. recebe `identificador` pela API;
+2. monta a URL de busca de pessoa física no Portal da Transparência;
+3. abre a tela de resultados;
+4. tenta dispensar o banner de cookies, se existir;
+5. abre `Refine a Busca`;
+6. marca `Beneficiário de Programa Social`;
+7. dispara novamente a consulta;
+8. detecta a contagem de resultados ou a lista de links;
+9. se não houver resultado, captura evidência e retorna `sem_resultados`;
+10. se houver resultado, clica no primeiro nome retornado;
+11. extrai os dados principais da tela intermediária da pessoa;
+12. abre o accordion de recebimentos;
+13. extrai `nis` e `valor_recebido` da primeira linha da tabela;
+14. captura screenshot em base64 com a seção de recebimentos aberta;
+15. clica em `Detalhar`;
+16. extrai a tabela detalhada final;
+17. devolve o JSON consolidado pela API.
+
+## Referências do site usadas para clicar, preencher e copiar
+
+### Busca inicial
+
+A automação não preenche um formulário na home. Ela monta a URL de busca diretamente:
+
+- rota: `/pessoa-fisica/busca/lista`
+- parâmetros:
+  - `termo={{identificador}}`
+  - `pagina=1`
+  - `tamanhoPagina=10`
+
+Implementação:
+
+- [app/consulta/common.py](/mnt/c/Most/Most-teste/app/consulta/common.py)
+
+### Banner de cookies
+
+Se houver banner, o robô tenta clicar em botões com estes textos:
+
+- `Aceitar`
+- `Concordo`
+- `Continuar`
+
+Seletores:
+
+- `button:has-text('Aceitar')`
+- `button:has-text('Concordo')`
+- `button:has-text('Continuar')`
+
+### Busca refinada
+
+Para abrir a área correta de filtros, usa:
+
+- botão:
+  - `button.header[aria-controls='box-busca-refinada']`
+- container:
+  - `#box-busca-refinada`
+
+### Filtro de programa social
+
+Para cumprir o cenário do desafio, usa:
+
+- checkbox:
+  - `#beneficiarioProgramaSocial`
+- label do checkbox:
+  - `label[for='beneficiarioProgramaSocial']`
+- botão de consultar:
+  - `#btnConsultarPF`
+
+Fluxo:
+
+- abre a busca refinada;
+- garante que o checkbox de beneficiário esteja marcado;
+- clica no botão de consultar;
+- aguarda nova navegação.
+
+### Leitura dos resultados
+
+O robô considera como referência de resultado qualquer um destes sinais:
+
+- contador:
+  - `#countResultados`
+- links do nome:
+  - `a.link-busca-nome`
+- fallback de link:
+  - `a[href*='/busca/pessoa-fisica/']`
+- fallback textual no corpo da página:
+  - `Foram encontrados X resultados`
+
+### Clique no beneficiário
+
+O primeiro resultado compatível é clicado por:
+
+- `a.link-busca-nome, a[href*='/busca/pessoa-fisica/']`
+
+Depois disso, a automação valida se entrou numa URL contendo:
+
+- `/busca/pessoa-fisica/`
+
+### Extração dos dados principais
+
+Na tela intermediária da pessoa, usa como referência:
+
+- `section.dados-tabelados`
+
+Dentro dessas seções, percorre:
+
+- `li`
+- `tr`
+- `.row`
+- `.col`
+- `.dados-tabelados__item`
+
+Estratégia:
+
+- lê os textos dos blocos;
+- normaliza rótulos;
+- monta pares `campo -> valor`;
+- tenta extrair:
+  - `cpf`
+  - `localidade`
+
+Se a leitura estruturada falhar, aplica fallback por regex no texto da seção.
+
+### Recebimentos de recursos
+
+Para abrir a seção do benefício, usa:
+
+- `button.header[aria-controls='accordion-recebimentos-recursos']`
+
+Depois aguarda:
+
+- `#accordion-recebimentos-recursos table`
+- `#accordion-recebimentos-recursos a#btnDetalharBpc`
+- `#accordion-recebimentos-recursos a[href*='/beneficios/']`
+
+### Extração de NIS e valor recebido
+
+Com o accordion aberto, lê:
+
+- `#accordion-recebimentos-recursos table`
+
+Na tabela:
+
+- cabeçalhos em `thead th`
+- linhas em `tbody tr`
+
+Da primeira linha, procura os campos:
+
+- `NIS`
+- `Valor Recebido`
+- `Valor`
+- `Valor do benefício`
+- `Valor do beneficio`
+
+### Screenshot de evidência
+
+O screenshot é gerado em:
+
+- página inteira;
+- formato `png`;
+- retorno em `base64`
+
+Ele é capturado depois da abertura do accordion `accordion-recebimentos-recursos`, para registrar visualmente o beneficiário e os dados do recebimento.
+
+### Clique em Detalhar
+
+Para navegar ao detalhe final do benefício, usa:
+
+- `a#btnDetalharBpc`
+- fallback:
+  - `a.br-button.secondary.mt-3[href*='/beneficios/']`
+
+Depois valida navegação para URL contendo:
+
+- `/beneficios/`
+
+### Tabela detalhada final
+
+Na última tela, lê:
+
+- `#tabelaDetalheDisponibilizado`
+
+Estratégia:
+
+- cabeçalhos em `thead th`
+- linhas em `tbody tr`
+- células em `td`
+
+Se o número de colunas não bater com os cabeçalhos, usa fallback:
+
+- `coluna_1`
+- `coluna_2`
+- ...
+
+## Estratégia de robustez
+
+Para reduzir a chance de quebra por variação do portal, a automação usa:
+
+- espera por visibilidade antes dos cliques;
+- `expect_navigation` nas mudanças de página;
+- mais de um seletor para a mesma etapa;
+- fallback por texto da página para detectar quantidade de resultados;
+- delays curtos com jitter;
+- script de stealth no Playwright para reduzir sinais diretos de automação.
 
 ## Decisões técnicas
 
@@ -15,8 +224,9 @@ Também incluí um desenho objetivo da **Parte 2 (bônus)** em [docs/bonus-workf
 - **FastAPI** entrega API simples, validação de payload com Pydantic e Swagger automático em `/docs`.
 - A automação foi escrita com **seletores defensivos e fallbacks**, porque o Portal da Transparência pode variar discretamente na estrutura HTML.
 - O fluxo usa **esperas por estado visível e navegação**, com um jitter curto entre ações em vez de sleeps longos fixos.
-- Cada requisição cria seu próprio browser/context no fluxo ativo.
-- A API limita a concorrência local a **2 consultas simultâneas por processo** para evitar abrir browsers sem controle.
+- Cada requisição cria sua própria aba do browser/context.
+- O código foi preparado para execução concorrente, mas o ambiente publicado deste teste técnico ficou limitado pela VM disponível.
+- Na publicação usada na entrega, a execução foi configurada para **1 requisição por vez**, porque a VM obtida na Oracle Free Tier tem apenas **1 GB de RAM** e não sustenta com estabilidade múltiplas abas do browser simultâneas.
 
 ## Estrutura
 
@@ -122,11 +332,19 @@ O navegador padrão é `chromium`, que também é o browser instalado na imagem 
 
 - O fluxo usa a busca direta da pessoa física no Portal da Transparência.
 - A seleção do primeiro resultado compatível é intencional, alinhada ao critério do desafio.
-- O timeout informado na requisição agora é propagado para a navegação e para as esperas internas do Playwright.
 - O nome retornado em `nome` é o próprio texto clicado em `link-busca-nome`.
 - `cpf` e `localidade` são extraídos da área `dados-tabelados` da tela intermediária.
 - `nis` e `valor_recebido` são extraídos da tabela exibida após abrir `accordion-recebimentos-recursos`.
 - `tabela_detalhada` é extraída apenas após o clique em `Detalhar`.
+
+## Limitação operacional da entrega
+
+- O fluxo de automação publicado na **Activepieces** para avaliação deve ser usado com **uma requisição por vez**.
+- Essa limitação não é uma restrição conceitual do código, e sim do ambiente disponível para a entrega.
+- A VM Oracle Free Tier disponível no momento da produção deste teste técnico tinha **1 GB de RAM**, o que inviabilizou manter múltiplas execuções simultâneas do navegador com estabilidade aceitável.
+- Em benchmark controlado **em ambiente local**, foi possível validar lote com **6 requisições simultâneas** retornando em cerca de **13 segundos**.
+- A intenção original era usar a opção gratuita mais robusta da Oracle com **24 GB de RAM**, o que provavelmente permitiria operar algo na faixa de **20 a 50 requisições simultâneas** sem custo.
+- Isso não foi possível porque, no momento da execução deste teste técnico, **não havia máquinas disponíveis** nessa configuração gratuita dentro da Oracle Cloud.
 
 ## Execução com Docker
 
@@ -150,9 +368,32 @@ Para salvar a saída:
 OUTPUT_FILE=benchmark-latency.txt ./scripts/benchmark-latency.sh
 ```
 
-## Melhorias recomendadas
+Em uma VM com menos recursos, aumente o timeout da requisição:
 
-- testes automatizados com mocks de HTML para cenários previsíveis;
-- observabilidade com correlation id por consulta;
-- fila assíncrona ou worker dedicado para escalar além do limite por processo;
-- implementação prática da Parte 2 em Activepieces com Google Drive e Sheets.
+```bash
+REQUEST_TIMEOUT=600 OUTPUT_FILE=benchmark-latency.txt ./scripts/benchmark-latency.sh
+```
+
+## Benchmark de memória
+
+Com a API já no ar e o container `api` ativo no `docker compose`:
+
+```bash
+chmod +x scripts/benchmark-memory.sh
+./scripts/benchmark-memory.sh
+```
+
+Para aumentar o timeout e salvar a saída:
+
+```bash
+REQUEST_TIMEOUT=600 OUTPUT_FILE=benchmark-memory.txt ./scripts/benchmark-memory.sh
+```
+
+## Benchmark completo para servidor
+
+Se quiser executar latência e memória em sequência, com timeout maior e arquivos separados:
+
+```bash
+chmod +x scripts/benchmark-server.sh
+LATENCY_TIMEOUT=600 MEMORY_TIMEOUT=600 ./scripts/benchmark-server.sh
+```
