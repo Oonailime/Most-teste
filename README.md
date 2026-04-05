@@ -7,7 +7,7 @@ Implementação da **Parte 1** do desafio com:
 - captura de screenshot do fluxo em base64;
 - coleta dos dados principais do beneficiário e da tabela detalhada do benefício.
 
-Também incluí o desenho e a configuração final da **Parte 2 (bônus)** em [docs/bonus-workflow.md](/mnt/c/Most/Most-teste/docs/bonus-workflow.md), incluindo o formulário web publicado no Activepieces.
+Também incluí o desenho e a configuração final da **Parte 2 (bônus)** em [docs/bonus-workflow.md](docs/bonus-workflow.md), incluindo o formulário web publicado no Activepieces.
 
 ## Algoritmo da automação
 
