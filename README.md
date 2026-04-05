@@ -7,8 +7,11 @@ Implementação da **Parte 1** do desafio com:
 - captura de screenshot do fluxo em base64;
 - coleta dos dados principais do beneficiário e da tabela detalhada do benefício.
 
-Também incluí o desenho e a configuração final da **Parte 2 (bônus)** em [docs/bonus-workflow.md](docs/bonus-workflow.md), incluindo o formulário web publicado no Activepieces.
+Também incluí o desenho e a configuração final da **Parte 2 (bônus)** em [docs/bonus-workflow.md](docs/bonus-workflow.md), incluindo:
 
+- formulário web publicado no Activepieces: https://cloud.activepieces.com/forms/RLSVQlGIDcQj4jJZVhSE5;
+- pasta pública do Google Drive com os JSONs gerados: <https://drive.google.com/drive/folders/1EK8W9fshaogdNz6oylq7zkAxE2h4Ci-V?usp=sharing>.
+- planilha pública do google sheets: https://docs.google.com/spreadsheets/d/1jP-pSZr5nLiRWRTEhshemGPGzEUhqnHtbY0_mEiHTdE/edit?gid=102423035#gid=102423035
 ## Algoritmo da automação
 
 O robô da Parte 1 segue este fluxo:
