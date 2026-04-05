@@ -9,9 +9,13 @@ Sugestão de plataforma: **Activepieces**. Motivos:
 
 ## Fluxo implementado
 
-Entrada do usuário via formulário web do Activepieces:
+# Entrada do usuário via formulário web do Activepieces:
 
 - Formulário publicado: <https://cloud.activepieces.com/forms/RLSVQlGIDcQj4jJZVhSE5>
+
+# Saídas
+- Pasta pública no Google Drive para os JSONs gerados: <https://drive.google.com/drive/folders/1EK8W9fshaogdNz6oylq7zkAxE2h4Ci-V?usp=sharing>
+- planilha pública do google sheets: https://docs.google.com/spreadsheets/d/1jP-pSZr5nLiRWRTEhshemGPGzEUhqnHtbY0_mEiHTdE/edit?gid=102423035#gid=102423035
 
 Sequência final do fluxo:
 
