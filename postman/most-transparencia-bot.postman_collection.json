@@ -375,6 +375,73 @@
       }
     },
     {
+      "name": "Consulta - ILDA DA SILVA OLIVEIRA ALMEIDA (Multiplos Beneficios)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test(\"Status code is 200\", function () {",
+              "  pm.response.to.have.status(200);",
+              "});",
+              "",
+              "const json = pm.response.json();",
+              "",
+              "pm.test(\"Retorna sucesso com beneficios multiplos\", function () {",
+              "  pm.expect(json.status).to.eql(\"sucesso\");",
+              "  pm.expect(json.beneficios).to.be.an(\"array\");",
+              "  pm.expect(json.beneficios.length).to.be.at.least(2);",
+              "});",
+              "",
+              "pm.test(\"Contem tipos e urls de detalhe esperados\", function () {",
+              "  const tipos = json.beneficios.map((item) => item.tipo_beneficio);",
+              "  const urls = json.beneficios.map((item) => item.url_detalhe);",
+              "  pm.expect(tipos).to.include(\"auxilio-emergencial\");",
+              "  pm.expect(tipos).to.include(\"bolsa-familia\");",
+              "  pm.expect(urls.some((url) => url.includes(\"/beneficios/auxilio-emergencial/\"))).to.eql(true);",
+              "  pm.expect(urls.some((url) => url.includes(\"/beneficios/bolsa-familia/\"))).to.eql(true);",
+              "});",
+              "",
+              "pm.test(\"Cada beneficio detalhado possui nome, NIS, valor e tabela\", function () {",
+              "  json.beneficios.forEach((item) => {",
+              "    pm.expect(item.nome).to.be.a(\"string\").and.not.empty;",
+              "    pm.expect(item.nis).to.be.a(\"string\");",
+              "    pm.expect(item.valor_recebido).to.be.a(\"string\").and.not.empty;",
+              "    pm.expect(item.tabela_detalhada).to.be.an(\"object\");",
+              "  });",
+              "  const beneficioAuxilio = json.beneficios.find((item) => item.tipo_beneficio === \"auxilio-emergencial\");",
+              "  pm.expect(beneficioAuxilio).to.be.an(\"object\");",
+              "  pm.expect(beneficioAuxilio.nis).to.eql(\"1.312.000.134-0\");",
+              "});"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"identificador\": \"ILDA DA SILVA OLIVEIRA ALMEIDA\"\n}"
+        },
+        "url": {
+          "raw": "{{base_url}}/consulta-script",
+          "host": [
+            "{{base_url}}"
+          ],
+          "path": [
+            "consulta-script"
+          ]
+        }
+      }
+    },
+    {
       "name": "Servidor Oracle",
       "item": [
         {
@@ -494,6 +561,52 @@
             "body": {
               "mode": "raw",
               "raw": "{\n  \"identificador\": \"{{nome_inexistente}}\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url_server}}/consulta-script",
+              "host": [
+                "{{base_url_server}}"
+              ],
+              "path": [
+                "consulta-script"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Consulta - Servidor ILDA DA SILVA OLIVEIRA ALMEIDA (Multiplos Beneficios)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Status code is 200\", function () {",
+                  "  pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "const json = pm.response.json();",
+                  "",
+                  "pm.test(\"Retorna sucesso com beneficios multiplos\", function () {",
+                  "  pm.expect(json.status).to.eql(\"sucesso\");",
+                  "  pm.expect(json.beneficios).to.be.an(\"array\");",
+                  "  pm.expect(json.beneficios.length).to.be.at.least(2);",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"identificador\": \"ILDA DA SILVA OLIVEIRA ALMEIDA\"\n}"
             },
             "url": {
               "raw": "{{base_url_server}}/consulta-script",

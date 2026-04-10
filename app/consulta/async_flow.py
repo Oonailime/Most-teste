@@ -8,12 +8,16 @@ from playwright.async_api import Error, Locator, Page
 
 from app.consulta.common import (
     BASE_URL,
+    BENEFICIO_DETAIL_READY_SELECTORS,
+    BENEFICIO_DETAIL_TABLE_SELECTORS,
+    build_beneficio_resumos,
     DEFAULT_WINDOWS_UA,
     RESULT_POLL_INTERVAL_MS,
     SEARCH_URL_TEMPLATE,
     clean_table_cell,
     find_summary_value,
     get_first_present,
+    get_recebimento_summary_from_row,
     human_delay_ms,
     monotonic_deadline,
     normalize_space,
@@ -181,11 +185,7 @@ async def click_first_result(page: Page, deadline: float) -> str:
     result_link = page.locator("a.link-busca-nome, a[href*='/busca/pessoa-fisica/']").first
     await wait_for_locator_visible(result_link, deadline)
     result_name = normalize_space(await result_link.inner_text())
-    async with page.expect_navigation(
-        wait_until="domcontentloaded",
-        timeout=remaining_timeout_ms(deadline),
-    ):
-        await click_with_stealth_pause(page, result_link, deadline)
+    await click_with_stealth_pause(page, result_link, deadline)
     await wait_for_any_visible(
         page,
         [
@@ -203,50 +203,50 @@ async def open_recebimentos(page: Page, deadline: float) -> None:
     button = page.locator(
         "button.header[aria-controls='accordion-recebimentos-recursos']"
     ).first
-    await click_with_stealth_pause(page, button, deadline)
-    await wait_for_any_visible(
-        page,
-        [
-            "#accordion-recebimentos-recursos table",
-            "#accordion-recebimentos-recursos a#btnDetalharBpc",
-            "#accordion-recebimentos-recursos a[href*='/beneficios/']",
-        ],
-        deadline,
-    )
+    content_selectors = [
+        "#accordion-recebimentos-recursos table",
+        "#accordion-recebimentos-recursos a#btnDetalharBpc",
+        "#accordion-recebimentos-recursos a#btnDetalharBolsaFamilia",
+        "#accordion-recebimentos-recursos a[href*='/beneficios/']",
+    ]
+
+    for attempt in range(3):
+        for selector in content_selectors:
+            try:
+                if await page.locator(selector).first.is_visible(
+                    timeout=min(250, remaining_timeout_ms(deadline, 250))
+                ):
+                    return
+            except Error:
+                continue
+
+        await wait_for_locator_visible(button, deadline)
+        try:
+            await button.scroll_into_view_if_needed(timeout=remaining_timeout_ms(deadline))
+        except Error:
+            pass
+
+        try:
+            await click_with_stealth_pause(page, button, deadline)
+        except Error:
+            try:
+                await wait_delay(page, deadline)
+                await button.click(force=True, timeout=remaining_timeout_ms(deadline))
+            except Error:
+                if attempt == 2:
+                    raise
+
+        try:
+            await wait_for_any_visible(page, content_selectors, deadline)
+            return
+        except TimeoutError:
+            if attempt == 2:
+                raise
 
 
 async def capture_screenshot_base64(page: Page) -> str:
     image_bytes = await page.screenshot(full_page=True, type="png")
     return base64.b64encode(image_bytes).decode("utf-8")
-
-
-async def click_detail(page: Page, deadline: float) -> str:
-    detail_link = await wait_for_any_visible(
-        page,
-        [
-            "a#btnDetalharBpc",
-            "a.br-button.secondary.mt-3[href*='/beneficios/']",
-        ],
-        deadline,
-    )
-    href = await detail_link.get_attribute("href") or ""
-    expected_url_part = href if href.startswith("http") else f"{BASE_URL}{href}"
-    async with page.expect_navigation(
-        wait_until="domcontentloaded",
-        timeout=remaining_timeout_ms(deadline),
-    ):
-        await click_with_stealth_pause(page, detail_link, deadline)
-    await wait_for_any_visible(
-        page,
-        [
-            "#tabelaDetalheDisponibilizado",
-            "section.dados-detalhados",
-        ],
-        deadline,
-    )
-    if expected_url_part and expected_url_part not in page.url and "/beneficios/" not in page.url:
-        raise RuntimeError("A navegacao para o detalhe do beneficio nao ocorreu.")
-    return page.url
 
 
 async def extract_person_summary(page: Page) -> dict[str, str | None]:
@@ -313,29 +313,327 @@ async def extract_table_rows(table: Locator) -> tuple[list[str], list[dict[str, 
     return headers, rows
 
 
-async def extract_recebimento_summary(page: Page, deadline: float) -> dict[str, str | None]:
+def get_table_container(table: Locator) -> Locator:
+    return table.locator("xpath=ancestor::div[contains(@class,'wrapper-table')][1]").first
+
+
+async def get_table_state(table: Locator, container: Locator) -> tuple[str | None, int, str]:
+    table_id = await table.get_attribute("id")
+    info_text = ""
+    row_count = 0
+    try:
+        if table_id:
+            info = container.locator(f"#{table_id}_info").first
+            if await info.count():
+                info_text = normalize_space(await info.inner_text())
+    except Error:
+        info_text = ""
+
+    try:
+        row_count = await table.locator("tbody tr").count()
+    except Error:
+        row_count = 0
+
+    first_row_text = ""
+    if row_count:
+        try:
+            first_row_text = normalize_space(await table.locator("tbody tr").first.inner_text())
+        except Error:
+            first_row_text = ""
+
+    return info_text or None, row_count, first_row_text
+
+
+async def wait_for_table_state_change(
+    page: Page,
+    table: Locator,
+    container: Locator,
+    previous_state: tuple[str | None, int, str],
+    deadline: float,
+) -> None:
+    while True:
+        current_state = await get_table_state(table, container)
+        if current_state != previous_state:
+            return
+        await page.wait_for_timeout(min(150, remaining_timeout_ms(deadline, 150)))
+
+
+async def maybe_click_full_pagination(
+    page: Page,
+    table: Locator,
+    container: Locator,
+    deadline: float,
+) -> None:
+    button = container.locator("#btnPaginacaoCompleta, button:has-text('Paginação completa')").first
+    try:
+        if await button.count() and await button.is_visible(timeout=min(300, remaining_timeout_ms(deadline, 300))):
+            previous_state = await get_table_state(table, container)
+            await click_with_stealth_pause(page, button, deadline)
+            await wait_for_table_state_change(page, table, container, previous_state, deadline)
+    except Error:
+        return
+
+
+async def maybe_expand_table_page_size(
+    page: Page,
+    table: Locator,
+    container: Locator,
+    deadline: float,
+) -> None:
+    table_id = await table.get_attribute("id")
+    if not table_id:
+        return
+
+    select = container.locator(
+        f"select[name='{table_id}_length'], select[aria-controls='{table_id}']"
+    ).first
+    try:
+        if not await select.count():
+            return
+        option_values = [
+            int(value)
+            for value in (
+                await select.locator("option").evaluate_all(
+                    "(options) => options.map((option) => option.value)"
+                )
+            )
+            if str(value).isdigit()
+        ]
+        if not option_values:
+            return
+        max_value = str(max(option_values))
+        if await select.input_value() != max_value:
+            previous_state = await get_table_state(table, container)
+            await select.select_option(value=max_value, timeout=remaining_timeout_ms(deadline))
+            await wait_for_table_state_change(page, table, container, previous_state, deadline)
+    except Error:
+        return
+
+
+async def get_table_page_info(container: Locator, table_id: str | None) -> tuple[int, int] | None:
+    selectors = []
+    if table_id:
+        selectors.append(f"#{table_id}_info")
+    selectors.append(".dataTables_info")
+
+    for selector in selectors:
+        info = container.locator(selector).first
+        try:
+            if not await info.count():
+                continue
+            text = normalize_space(await info.inner_text())
+        except Error:
+            continue
+        match = re.search(r"Página\s+(\d+)\s+de\s+(\d+)", text, flags=re.IGNORECASE)
+        if match:
+            return int(match.group(1)), int(match.group(2))
+    return None
+
+
+async def go_to_next_table_page(
+    page: Page,
+    table: Locator,
+    container: Locator,
+    deadline: float,
+) -> bool:
+    table_id = await table.get_attribute("id")
+    next_candidates = []
+    if table_id:
+        next_candidates.append(f"#{table_id}_next")
+    next_candidates.append(".paginate_button.next")
+
+    next_item: Locator | None = None
+    for selector in next_candidates:
+        candidate = container.locator(selector).first
+        try:
+            if await candidate.count():
+                next_item = candidate
+                break
+        except Error:
+            continue
+
+    if next_item is None:
+        return False
+
+    try:
+        class_name = ((await next_item.get_attribute("class")) or "").lower()
+        if "disabled" in class_name:
+            return False
+    except Error:
+        return False
+
+    next_button = next_item.locator("button, a").first
+    try:
+        previous_state = await get_table_state(table, container)
+        await click_with_stealth_pause(page, next_button, deadline)
+        await wait_for_table_state_change(page, table, container, previous_state, deadline)
+        return True
+    except Error:
+        return False
+
+
+async def extract_all_table_rows(
+    page: Page,
+    table: Locator,
+    deadline: float,
+) -> tuple[list[str], list[dict[str, str]]]:
+    container = get_table_container(table)
+    await maybe_click_full_pagination(page, table, container, deadline)
+    await maybe_expand_table_page_size(page, table, container, deadline)
+
+    headers: list[str] = []
+    rows: list[dict[str, str]] = []
+    seen_rows: set[tuple[tuple[str, str], ...]] = set()
+    page_guard = 0
+
+    while True:
+        current_headers, current_rows = await extract_table_rows(table)
+        if current_headers and not headers:
+            headers = current_headers
+        for row in current_rows:
+            row_key = tuple(sorted(row.items()))
+            if row_key in seen_rows:
+                continue
+            seen_rows.add(row_key)
+            rows.append(row)
+
+        table_id = await table.get_attribute("id")
+        page_info = await get_table_page_info(container, table_id)
+        if page_info and page_info[0] >= page_info[1]:
+            break
+        if page_info is None and not await go_to_next_table_page(page, table, container, deadline):
+            break
+        if page_info is not None and not await go_to_next_table_page(page, table, container, deadline):
+            break
+
+        page_guard += 1
+        if page_guard >= 100:
+            break
+
+    return headers, rows
+
+
+async def extract_recebimento_rows(page: Page, deadline: float) -> list[dict[str, str]]:
     accordion = page.locator("#accordion-recebimentos-recursos").first
     await accordion.wait_for(state="visible", timeout=remaining_timeout_ms(deadline))
     table = accordion.locator("table").first
     await table.wait_for(state="visible", timeout=remaining_timeout_ms(deadline))
     _, rows = await extract_table_rows(table)
-    first_row = rows[0] if rows else {}
+    return rows
 
-    return {
-        "nis": get_first_present(first_row, ["NIS"]),
-        "valor_recebido": get_first_present(
-            first_row,
-            ["Valor Recebido", "Valor", "Valor do benefício", "Valor do beneficio"],
-        ),
-    }
+
+async def extract_recebimento_summary(page: Page, deadline: float) -> dict[str, str | None]:
+    rows = await extract_recebimento_rows(page, deadline)
+    first_row = rows[0] if rows else {}
+    return get_recebimento_summary_from_row(first_row)
+
+
+async def extract_beneficio_links(page: Page, deadline: float) -> list[dict[str, str | None]]:
+    accordion = page.locator("#accordion-recebimentos-recursos").first
+    await accordion.wait_for(state="visible", timeout=remaining_timeout_ms(deadline))
+    detail_link = await wait_for_any_visible(
+        page,
+        [
+            "#accordion-recebimentos-recursos a#btnDetalharBpc",
+            "#accordion-recebimentos-recursos a#btnDetalharBolsaFamilia",
+            "#accordion-recebimentos-recursos a.br-button.secondary.mt-3[href*='/beneficios/']",
+            "#accordion-recebimentos-recursos a[href*='/beneficios/']",
+        ],
+        deadline,
+    )
+    await detail_link.wait_for(state="visible", timeout=remaining_timeout_ms(deadline))
+
+    links = accordion.locator("a.br-button.secondary.mt-3[href*='/beneficios/'], a[href*='/beneficios/']")
+    link_count = await links.count()
+    beneficios: list[dict[str, str | None]] = []
+
+    for index in range(link_count):
+        link = links.nth(index)
+        href = await link.get_attribute("href") or ""
+        if not href:
+            continue
+        beneficios.append(
+            {
+                "id": await link.get_attribute("id"),
+                "texto": normalize_space(await link.inner_text()),
+                "url": href if href.startswith("http") else f"{BASE_URL}{href}",
+            }
+        )
+
+    if not beneficios:
+        raise RuntimeError("Nenhum link de detalhe de beneficio foi encontrado.")
+
+    return beneficios
+
+
+async def find_detail_table(page: Page, deadline: float) -> Locator:
+    await wait_for_any_visible(page, BENEFICIO_DETAIL_READY_SELECTORS, deadline)
+
+    while True:
+        for selector in BENEFICIO_DETAIL_TABLE_SELECTORS:
+            locator = page.locator(selector)
+            count = await locator.count()
+            for index in range(count):
+                table = locator.nth(index)
+                try:
+                    header_count = await table.locator("thead th").count()
+                    row_count = await table.locator("tbody tr").count()
+                    if header_count or row_count:
+                        return table
+                except Error:
+                    continue
+
+        await page.wait_for_timeout(min(150, remaining_timeout_ms(deadline, 150)))
 
 
 async def extract_detail_table(page: Page, deadline: float) -> dict[str, object]:
-    table = page.locator("#tabelaDetalheDisponibilizado").first
-    await table.wait_for(state="visible", timeout=remaining_timeout_ms(deadline))
-    headers, rows = await extract_table_rows(table)
+    table = await find_detail_table(page, deadline)
+    headers, rows = await extract_all_table_rows(page, table, deadline)
 
     return {"cabecalhos": headers, "linhas": rows}
+
+
+async def close_extra_pages(main_page: Page) -> None:
+    for extra_page in list(main_page.context.pages):
+        if extra_page is main_page:
+            continue
+        try:
+            await extra_page.close()
+        except Error:
+            continue
+
+
+async def close_all_pages(page: Page) -> None:
+    for opened_page in list(page.context.pages):
+        try:
+            await opened_page.close()
+        except Error:
+            continue
+
+
+async def extract_beneficio_detail(
+    page: Page,
+    detail_url: str,
+    deadline: float,
+) -> dict[str, object]:
+    detail_page = await page.context.new_page()
+    try:
+        await apply_stealth(detail_page)
+        await detail_page.goto(
+            detail_url,
+            wait_until="domcontentloaded",
+            timeout=remaining_timeout_ms(deadline),
+        )
+        await wait_for_any_visible(detail_page, BENEFICIO_DETAIL_READY_SELECTORS, deadline)
+        if detail_url not in detail_page.url and "/beneficios/" not in detail_page.url:
+            raise RuntimeError("A navegacao para o detalhe do beneficio nao ocorreu.")
+        tabela_detalhada = await extract_detail_table(detail_page, deadline)
+        return {
+            "url_detalhe": detail_page.url,
+            "tabela_detalhada": tabela_detalhada,
+        }
+    finally:
+        await detail_page.close()
 
 
 async def run_consulta_script(page: Page, request: ConsultaScriptRequest) -> ConsultaScriptResultado:
@@ -370,22 +668,35 @@ async def run_consulta_script(page: Page, request: ConsultaScriptRequest) -> Con
     nome_resultado = await click_first_result(page, deadline)
     person_summary = await extract_person_summary(page)
     await open_recebimentos(page, deadline)
-    recebimento_summary = await extract_recebimento_summary(page, deadline)
+    recebimento_rows = await extract_recebimento_rows(page, deadline)
+    recebimento_summary = get_recebimento_summary_from_row(
+        recebimento_rows[0] if recebimento_rows else {}
+    )
+    beneficio_links = await extract_beneficio_links(page, deadline)
     evidencia_base64 = await capture_screenshot_base64(page)
-    url_detalhe = await click_detail(page, deadline)
-    tabela_detalhada = await extract_detail_table(page, deadline)
+    beneficios_resumo = build_beneficio_resumos(
+        rows=recebimento_rows,
+        detail_links=beneficio_links,
+        nome=nome_resultado,
+    )
+    beneficios_detalhados: list[dict[str, object]] = []
+    for beneficio in beneficios_resumo:
+        beneficios_detalhados.append(
+            {
+                **beneficio,
+                **(await extract_beneficio_detail(page, beneficio["url_detalhe"], deadline)),
+            }
+        )
+        await close_extra_pages(page)
 
     return ConsultaScriptResultado(
         status="sucesso",
         nome=nome_resultado,
-        nis=recebimento_summary["nis"],
         cpf=person_summary["cpf"],
         localidade=person_summary["localidade"],
-        valor_recebido=recebimento_summary["valor_recebido"],
         nome_busca=request.identificador,
         resultado_clicado=nome_resultado,
         url_busca=search_url,
-        url_detalhe=url_detalhe,
         evidencia_base64=evidencia_base64,
-        tabela_detalhada=tabela_detalhada,
+        beneficios=beneficios_detalhados,
     )

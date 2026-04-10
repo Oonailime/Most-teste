@@ -25,10 +25,10 @@ class ConsultaScriptRequest(BaseModel):
         examples=["NOME EXEMPLO"],
     )
     timeout_ms: int = Field(
-        default=60000,
+        default=240000,
         ge=10000,
-        le=180000,
-        description="Tempo máximo da automação em milissegundos. Padrão: 60000.",
+        le=600000,
+        description="Tempo máximo da automação em milissegundos. Padrão: 240000.",
     )
     headless: bool = Field(
         default=True,
@@ -68,6 +68,15 @@ class ConsultaScriptTable(BaseModel):
     linhas: list[dict[str, str]] = Field(default_factory=list)
 
 
+class ConsultaScriptBeneficioResultado(BaseModel):
+    nome: str | None = None
+    nis: str | None = None
+    valor_recebido: str | None = None
+    tipo_beneficio: str | None = None
+    url_detalhe: str
+    tabela_detalhada: ConsultaScriptTable
+
+
 class ConsultaScriptResultado(BaseModel):
     status: str
     nome: str | None = None
@@ -82,4 +91,5 @@ class ConsultaScriptResultado(BaseModel):
     mensagem: str | None = None
     detalhe_portal: str | None = None
     tabela_detalhada: ConsultaScriptTable | None = None
+    beneficios: list[ConsultaScriptBeneficioResultado] | None = None
     evidencia_base64: str | None = None

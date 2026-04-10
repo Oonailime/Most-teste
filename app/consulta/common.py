@@ -3,7 +3,6 @@ from __future__ import annotations
 import os
 import random
 import re
-import sys
 import time
 
 BASE_URL = "https://portaldatransparencia.gov.br"
@@ -13,10 +12,10 @@ SEARCH_URL_TEMPLATE = (
 ACTION_DELAY_MS = 600
 ACTION_JITTER_MS = 200
 RESULT_POLL_INTERVAL_MS = 2000
-DEFAULT_TIMEOUT_MS = 60000
+DEFAULT_TIMEOUT_MS = 240000
 MAX_CONCURRENT_CONSULTAS = int(os.getenv("MAX_CONCURRENT_CONSULTAS", "6"))
 BROWSER_CHANNEL = os.getenv("BROWSER_CHANNEL", "chromium")
-ALLOW_HEADFUL_BROWSER = os.getenv("ALLOW_HEADFUL_BROWSER", "false").lower() in {
+ALLOW_HEADFUL_BROWSER = os.getenv("ALLOW_HEADFUL_BROWSER", "true").lower() in {
     "1",
     "true",
     "yes",
@@ -27,7 +26,31 @@ DEFAULT_WINDOWS_UA = (
     "AppleWebKit/537.36 (KHTML, like Gecko) "
     "Chrome/135.0.0.0 Safari/537.36 Edg/135.0.0.0"
 )
-USE_LOCAL_SYNC_FALLBACK = sys.platform == "win32" and sys.version_info >= (3, 14)
+USE_LOCAL_SYNC_FALLBACK = os.getenv("USE_LOCAL_SYNC_FALLBACK", "true").lower() in {
+    "1",
+    "true",
+    "yes",
+    "on",
+}
+
+BENEFICIO_DETAIL_READY_SELECTORS = [
+    "#tabelaDetalheDisponibilizado",
+    "table[id^='tabelaDetalhe']",
+    "div.dataTables_wrapper table",
+    "section.dados-detalhados table",
+    "section.dados-detalhados",
+    "main table",
+    "table",
+]
+
+BENEFICIO_DETAIL_TABLE_SELECTORS = [
+    "#tabelaDetalheDisponibilizado",
+    "table[id^='tabelaDetalhe']",
+    "div.dataTables_wrapper table",
+    "section.dados-detalhados table",
+    "main table",
+    "table",
+]
 
 
 def monotonic_deadline(timeout_ms: int) -> float:
@@ -95,4 +118,54 @@ def get_first_present(data: dict[str, str], candidates: list[str]) -> str | None
         if value:
             return value
     return None
+
+
+def get_recebimento_summary_from_row(row: dict[str, str]) -> dict[str, str | None]:
+    return {
+        "nis": get_first_present(row, ["NIS"]),
+        "valor_recebido": get_first_present(
+            row,
+            ["Valor Recebido", "Valor", "Valor do benefício", "Valor do beneficio"],
+        ),
+    }
+
+
+def infer_beneficio_tipo_from_url(url: str) -> str | None:
+    marker = "/beneficios/"
+    if marker not in url:
+        return None
+
+    suffix = url.split(marker, 1)[1]
+    if not suffix:
+        return None
+
+    return suffix.split("/", 1)[0] or None
+
+
+def build_beneficio_resumos(
+    *,
+    rows: list[dict[str, str]],
+    detail_links: list[dict[str, str | None]],
+    nome: str | None,
+) -> list[dict[str, str | None]]:
+    beneficios: list[dict[str, str | None]] = []
+
+    for index, detail_link in enumerate(detail_links):
+        href = detail_link.get("url")
+        if not href:
+            continue
+
+        row = rows[index] if index < len(rows) else {}
+        summary = get_recebimento_summary_from_row(row)
+        beneficios.append(
+            {
+                "nome": nome,
+                "nis": summary["nis"],
+                "valor_recebido": summary["valor_recebido"],
+                "tipo_beneficio": infer_beneficio_tipo_from_url(href),
+                "url_detalhe": href,
+            }
+        )
+
+    return beneficios
 
