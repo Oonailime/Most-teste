@@ -402,12 +402,13 @@
               "  pm.expect(urls.some((url) => url.includes(\"/beneficios/bolsa-familia/\"))).to.eql(true);",
               "});",
               "",
-              "pm.test(\"Cada beneficio detalhado possui nome, NIS, valor e tabela\", function () {",
+              "pm.test(\"Cada beneficio detalhado possui nome, url e tabela\", function () {",
               "  json.beneficios.forEach((item) => {",
               "    pm.expect(item.nome).to.be.a(\"string\").and.not.empty;",
-              "    pm.expect(item.nis).to.be.a(\"string\");",
-              "    pm.expect(item.valor_recebido).to.be.a(\"string\").and.not.empty;",
+              "    pm.expect(item.tipo_beneficio).to.be.a(\"string\").and.not.empty;",
+              "    pm.expect(item.url_detalhe).to.be.a(\"string\").and.not.empty;",
               "    pm.expect(item.tabela_detalhada).to.be.an(\"object\");",
+              "    pm.expect(item.tabela_detalhada.linhas).to.be.an(\"array\");",
               "  });",
               "  const beneficioAuxilio = json.beneficios.find((item) => item.tipo_beneficio === \"auxilio-emergencial\");",
               "  pm.expect(beneficioAuxilio).to.be.an(\"object\");",
@@ -428,7 +429,7 @@
         ],
         "body": {
           "mode": "raw",
-          "raw": "{\n  \"identificador\": \"ILDA DA SILVA OLIVEIRA ALMEIDA\"\n}"
+          "raw": "{\n  \"identificador\": \"09472209688\"\n  //,\n  //\"headless\": false\n}"
         },
         "url": {
           "raw": "{{base_url}}/consulta-script",
@@ -590,6 +591,28 @@
                   "  pm.expect(json.status).to.eql(\"sucesso\");",
                   "  pm.expect(json.beneficios).to.be.an(\"array\");",
                   "  pm.expect(json.beneficios.length).to.be.at.least(2);",
+                  "});",
+                  "",
+                  "pm.test(\"Contem tipos e urls de detalhe esperados\", function () {",
+                  "  const tipos = json.beneficios.map((item) => item.tipo_beneficio);",
+                  "  const urls = json.beneficios.map((item) => item.url_detalhe);",
+                  "  pm.expect(tipos).to.include(\"auxilio-emergencial\");",
+                  "  pm.expect(tipos).to.include(\"bolsa-familia\");",
+                  "  pm.expect(urls.some((url) => url.includes(\"/beneficios/auxilio-emergencial/\"))).to.eql(true);",
+                  "  pm.expect(urls.some((url) => url.includes(\"/beneficios/bolsa-familia/\"))).to.eql(true);",
+                  "});",
+                  "",
+                  "pm.test(\"Cada beneficio detalhado possui nome, url e tabela\", function () {",
+                  "  json.beneficios.forEach((item) => {",
+                  "    pm.expect(item.nome).to.be.a(\"string\").and.not.empty;",
+                  "    pm.expect(item.tipo_beneficio).to.be.a(\"string\").and.not.empty;",
+                  "    pm.expect(item.url_detalhe).to.be.a(\"string\").and.not.empty;",
+                  "    pm.expect(item.tabela_detalhada).to.be.an(\"object\");",
+                  "    pm.expect(item.tabela_detalhada.linhas).to.be.an(\"array\");",
+                  "  });",
+                  "  const beneficioAuxilio = json.beneficios.find((item) => item.tipo_beneficio === \"auxilio-emergencial\");",
+                  "  pm.expect(beneficioAuxilio).to.be.an(\"object\");",
+                  "  pm.expect(beneficioAuxilio.nis).to.eql(\"1.312.000.134-0\");",
                   "});"
                 ],
                 "type": "text/javascript"
@@ -606,7 +629,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"identificador\": \"ILDA DA SILVA OLIVEIRA ALMEIDA\"\n}"
+              "raw": "{\n  \"identificador\": \"09472209688\"\n  //,\n  //\"headless\": false\n}"
             },
             "url": {
               "raw": "{{base_url_server}}/consulta-script",
