@@ -32,6 +32,7 @@ from app.consulta.common import (
 from app.models import ConsultaScriptRequest, ConsultaScriptResultado
 
 
+# Aplica ajustes de stealth no contexto do navegador sync.
 def apply_stealth_sync(page: SyncPage) -> None:
     page.add_init_script(
         """
@@ -55,21 +56,25 @@ def apply_stealth_sync(page: SyncPage) -> None:
     )
 
 
+# Espera um pequeno atraso humano respeitando o deadline.
 def wait_delay_sync(page: SyncPage, deadline: float, delay_ms: int | None = None) -> None:
     effective_delay_ms = human_delay_ms() if delay_ms is None else delay_ms
     page.wait_for_timeout(min(effective_delay_ms, remaining_timeout_ms(deadline, effective_delay_ms)))
 
 
+# Aguarda um locator ficar visivel ate o deadline.
 def wait_for_locator_visible_sync(locator: SyncLocator, deadline: float) -> None:
     locator.wait_for(state="visible", timeout=remaining_timeout_ms(deadline))
 
 
+# Clica em um locator com pausa e validacao de visibilidade.
 def click_with_stealth_pause_sync(page: SyncPage, locator: SyncLocator, deadline: float) -> None:
     wait_for_locator_visible_sync(locator, deadline)
     wait_delay_sync(page, deadline)
     locator.click(timeout=remaining_timeout_ms(deadline))
 
 
+# Espera ate algum dos seletores ficar visivel e retorna o primeiro.
 def wait_for_any_visible_sync(page: SyncPage, selectors: list[str], deadline: float) -> SyncLocator:
     while True:
         for selector in selectors:
@@ -82,6 +87,7 @@ def wait_for_any_visible_sync(page: SyncPage, selectors: list[str], deadline: fl
         page.wait_for_timeout(min(150, remaining_timeout_ms(deadline, 150)))
 
 
+# Espera ate o checkbox atingir o estado desejado.
 def wait_for_checkbox_state_sync(
     page: SyncPage,
     checkbox: SyncLocator,
@@ -97,6 +103,7 @@ def wait_for_checkbox_state_sync(
         page.wait_for_timeout(min(150, remaining_timeout_ms(deadline, 150)))
 
 
+# Tenta fechar o banner de cookies se existir.
 def dismiss_cookie_banner_sync(page: SyncPage, deadline: float) -> None:
     for selector in [
         "button:has-text('Aceitar')",
@@ -112,6 +119,7 @@ def dismiss_cookie_banner_sync(page: SyncPage, deadline: float) -> None:
             continue
 
 
+# Aplica o filtro de beneficiario de programa social na busca!
 def apply_programa_social_filter_sync(page: SyncPage, deadline: float) -> None:
     refine_button = page.locator("button.header[aria-controls='box-busca-refinada']").first
     refine_box = page.locator("#box-busca-refinada").first
@@ -152,6 +160,7 @@ def apply_programa_social_filter_sync(page: SyncPage, deadline: float) -> None:
     )
 
 
+# Detecta e retorna a quantidade de resultados da busca!
 def wait_for_results_sync(page: SyncPage, deadline: float) -> int:
     while True:
         remaining_ms = remaining_timeout_ms(deadline)
@@ -185,6 +194,7 @@ def wait_for_results_sync(page: SyncPage, deadline: float) -> int:
         page.wait_for_timeout(min(RESULT_POLL_INTERVAL_MS, remaining_ms))
 
 
+# Clica no primeiro resultado e retorna o nome exibido!
 def click_first_result_sync(page: SyncPage, deadline: float) -> str:
     result_link = page.locator("a.link-busca-nome, a[href*='/busca/pessoa-fisica/']").first
     wait_for_locator_visible_sync(result_link, deadline)
@@ -203,6 +213,7 @@ def click_first_result_sync(page: SyncPage, deadline: float) -> str:
     return result_name
 
 
+# Abre o accordion de recebimentos e espera o conteudo aparecer!
 def open_recebimentos_sync(page: SyncPage, deadline: float) -> None:
     button = page.locator(
         "button.header[aria-controls='accordion-recebimentos-recursos']"
@@ -248,11 +259,13 @@ def open_recebimentos_sync(page: SyncPage, deadline: float) -> None:
                 raise
 
 
+# Captura screenshot da pagina e retorna em base64.
 def capture_screenshot_base64_sync(page: SyncPage) -> str:
     image_bytes = page.screenshot(full_page=FULL_PAGE_SCREENSHOT, type="png")
     return base64.b64encode(image_bytes).decode("utf-8")
 
 
+# Extrai nome, CPF e localidade da pagina da pessoa.
 def extract_person_summary_sync(page: SyncPage) -> dict[str, str | None]:
     sections = page.locator("section.dados-tabelados")
     count = sections.count()
@@ -288,6 +301,7 @@ def extract_person_summary_sync(page: SyncPage) -> dict[str, str | None]:
     return {"nome": data.get("nome"), "cpf": cpf, "localidade": localidade}
 
 
+# Extrai cabecalhos e linhas de uma tabela simples.
 def extract_table_rows_sync(table: SyncLocator) -> tuple[list[str], list[dict[str, str]]]:
     headers = [
         normalize_space(item)
@@ -316,10 +330,12 @@ def extract_table_rows_sync(table: SyncLocator) -> tuple[list[str], list[dict[st
     return headers, rows
 
 
+# Encontra o container da tabela para controles de paginacao.
 def get_table_container_sync(table: SyncLocator) -> SyncLocator:
     return table.locator("xpath=ancestor::div[contains(@class,'wrapper-table')][1]").first
 
 
+# Coleta estado da tabela para detectar mudancas de pagina.
 def get_table_state_sync(table: SyncLocator, container: SyncLocator) -> tuple[str | None, int, str]:
     table_id = table.get_attribute("id")
     info_text = ""
@@ -347,6 +363,7 @@ def get_table_state_sync(table: SyncLocator, container: SyncLocator) -> tuple[st
     return info_text or None, row_count, first_row_text
 
 
+# Espera a tabela mudar de estado apos interacao.
 def wait_for_table_state_change_sync(
     page: SyncPage,
     table: SyncLocator,
@@ -361,6 +378,7 @@ def wait_for_table_state_change_sync(
         page.wait_for_timeout(min(150, remaining_timeout_ms(deadline, 150)))
 
 
+# Tenta ativar paginacao completa quando disponivel.
 def maybe_click_full_pagination_sync(
     page: SyncPage,
     table: SyncLocator,
@@ -377,6 +395,7 @@ def maybe_click_full_pagination_sync(
         return
 
 
+# Aumenta o tamanho da pagina da tabela quando possivel.
 def maybe_expand_table_page_size_sync(
     page: SyncPage,
     table: SyncLocator,
@@ -409,6 +428,7 @@ def maybe_expand_table_page_size_sync(
         return
 
 
+# Le informacao de pagina atual e total da tabela.
 def get_table_page_info_sync(container: SyncLocator, table_id: str | None) -> tuple[int, int] | None:
     selectors = []
     if table_id:
@@ -429,6 +449,7 @@ def get_table_page_info_sync(container: SyncLocator, table_id: str | None) -> tu
     return None
 
 
+# Navega para a proxima pagina da tabela se existir.
 def go_to_next_table_page_sync(
     page: SyncPage,
     table: SyncLocator,
@@ -471,6 +492,7 @@ def go_to_next_table_page_sync(
         return False
 
 
+# Extrai todas as linhas de uma tabela paginada.
 def extract_all_table_rows_sync(
     page: SyncPage,
     table: SyncLocator,
@@ -511,6 +533,7 @@ def extract_all_table_rows_sync(
     return headers, rows
 
 
+# Extrai as linhas da tabela de recebimentos.
 def extract_recebimento_rows_sync(page: SyncPage, deadline: float) -> list[dict[str, str]]:
     accordion = page.locator("#accordion-recebimentos-recursos").first
     accordion.wait_for(state="visible", timeout=remaining_timeout_ms(deadline))
@@ -520,12 +543,14 @@ def extract_recebimento_rows_sync(page: SyncPage, deadline: float) -> list[dict[
     return rows
 
 
+# Resume NIS e valor recebido a partir da primeira linha.
 def extract_recebimento_summary_sync(page: SyncPage, deadline: float) -> dict[str, str | None]:
     rows = extract_recebimento_rows_sync(page, deadline)
     first_row = rows[0] if rows else {}
     return get_recebimento_summary_from_row(first_row)
 
 
+# Coleta os links de detalhamento de beneficios.
 def extract_beneficio_links_sync(page: SyncPage, deadline: float) -> list[dict[str, str | None]]:
     accordion = page.locator("#accordion-recebimentos-recursos").first
     accordion.wait_for(state="visible", timeout=remaining_timeout_ms(deadline))
@@ -564,6 +589,7 @@ def extract_beneficio_links_sync(page: SyncPage, deadline: float) -> list[dict[s
     return beneficios
 
 
+# Localiza a tabela de detalhe do beneficio na pagina.
 def find_detail_table_sync(page: SyncPage, deadline: float) -> SyncLocator:
     wait_for_any_visible_sync(page, BENEFICIO_DETAIL_READY_SELECTORS, deadline)
 
@@ -584,12 +610,14 @@ def find_detail_table_sync(page: SyncPage, deadline: float) -> SyncLocator:
         page.wait_for_timeout(min(150, remaining_timeout_ms(deadline, 150)))
 
 
+# Extrai cabecalhos e linhas da tabela detalhada.
 def extract_detail_table_sync(page: SyncPage, deadline: float) -> dict[str, object]:
     table = find_detail_table_sync(page, deadline)
     headers, rows = extract_all_table_rows_sync(page, table, deadline)
     return {"cabecalhos": headers, "linhas": rows}
 
 
+# Fecha todas as paginas abertas no contexto.
 def close_all_pages_sync(page: SyncPage) -> None:
     for opened_page in list(page.context.pages):
         try:
@@ -598,6 +626,7 @@ def close_all_pages_sync(page: SyncPage) -> None:
             continue
 
 
+# Abre o detalhe do beneficio e extrai a tabela detalhada.
 def extract_beneficio_detail_sync(
     page: SyncPage,
     detail_url: str,
@@ -618,6 +647,7 @@ def extract_beneficio_detail_sync(
     }
 
 
+# Executa o fluxo completo de consulta usando Playwright sync!
 def run_consulta_script_sync(request: ConsultaScriptRequest) -> ConsultaScriptResultado:
     deadline = monotonic_deadline(request.timeout_ms)
     termo = quote_plus(request.identificador)
@@ -648,9 +678,12 @@ def run_consulta_script_sync(request: ConsultaScriptRequest) -> ConsultaScriptRe
                 wait_until="domcontentloaded",
                 timeout=remaining_timeout_ms(deadline),
             )
+            # Tenta fechar o banner de cookies se existir.
             dismiss_cookie_banner_sync(page, deadline)
+            # Aplica o filtro de beneficiario de programa social na busca.
             apply_programa_social_filter_sync(page, deadline)
 
+            # Detecta e retorna a quantidade de resultados da busca.
             resultados = wait_for_results_sync(page, deadline)
             if resultados == 0:
                 return ConsultaScriptResultado(

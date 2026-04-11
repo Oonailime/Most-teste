@@ -34,12 +34,14 @@ class BrowserRuntime:
 
 
 class BrowserPagePool:
+    # Inicializa o pool com limite de slots de paginas.
     def __init__(self, browser: Browser, max_slots: int) -> None:
         self._browser = browser
         self._slots: asyncio.Queue[None] = asyncio.Queue(maxsize=max_slots)
         for _ in range(max_slots):
             self._slots.put_nowait(None)
 
+    # Reserva um slot, cria contexto/pagina e devolve um lease com release.
     async def acquire(self, timeout_ms: int) -> BrowserLease:
         timeout_s = timeout_ms / 1000
         try:
@@ -62,6 +64,7 @@ class BrowserPagePool:
             self._slots.put_nowait(None)
             raise
 
+        # Libera o contexto e devolve o slot ao pool.
         async def release() -> None:
             try:
                 await context.close()
@@ -72,6 +75,7 @@ class BrowserPagePool:
 
 
 class ScriptConsultaService:
+    # Inicializa o servico com limites, locks e caches de runtime.
     def __init__(self, max_concurrent_consultas: int = MAX_CONCURRENT_CONSULTAS) -> None:
         self._max_concurrent_consultas = max_concurrent_consultas
         self._semaphore = asyncio.Semaphore(max_concurrent_consultas)
@@ -79,11 +83,13 @@ class ScriptConsultaService:
         self._runtimes: dict[bool, BrowserRuntime] = {}
         self._startup_lock = asyncio.Lock()
 
+    # Inicializa o Playwright sob demanda e devolve a instancia.
     async def _ensure_playwright(self) -> Playwright:
         if self._playwright is None:
             self._playwright = await async_playwright().start()
         return self._playwright
 
+    # Garante um runtime de browser para o modo headless solicitado.
     async def _ensure_runtime(self, *, headless: bool) -> BrowserRuntime:
         async with self._startup_lock:
             runtime = self._runtimes.get(headless)
@@ -107,11 +113,13 @@ class ScriptConsultaService:
             self._runtimes[headless] = runtime
             return runtime
 
+    # Prepara o runtime async quando o fallback sync nao esta ativo.
     async def startup(self) -> None:
         if USE_LOCAL_SYNC_FALLBACK:
             return
         await self._ensure_runtime(headless=True)
 
+    # Fecha browsers e encerra o Playwright quando o app desliga.
     async def shutdown(self) -> None:
         if USE_LOCAL_SYNC_FALLBACK:
             return
@@ -127,6 +135,7 @@ class ScriptConsultaService:
                 await self._playwright.stop()
                 self._playwright = None
 
+    # Valida parametros e executa a consulta no modo sync ou async.
     async def run(self, request: ConsultaScriptRequest) -> ConsultaScriptResultado:
         validate_browser_mode(request)
         validate_browser_channel(request)
