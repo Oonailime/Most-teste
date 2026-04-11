@@ -287,28 +287,35 @@ curl -X POST http://127.0.0.1:8000/consulta-script \
 {
   "status": "sucesso",
   "nome": "A ANNE CHRISTINE SILVA RIBEIRO",
-  "nis": "123.45678.90-1",
   "cpf": "***.734.995-**",
-  "localidade": "PROPRIÁ - SE",
-  "valor_recebido": "R$ 3.900,00",
+  "localidade": "PROPRI? - SE",
   "nome_busca": "A Anne Christine Silva Ribeiro",
   "resultado_clicado": "A ANNE CHRISTINE SILVA RIBEIRO",
   "url_busca": "https://portaldatransparencia.gov.br/pessoa-fisica/busca/lista?termo=A+Anne+Christine+Silva+Ribeiro&pagina=1&tamanhoPagina=10",
-  "url_detalhe": "https://portaldatransparencia.gov.br/beneficios/auxilio-emergencial/187235083?ordenarPor=numeroParcela&direcao=desc",
-  "tabela_detalhada": {
-    "cabecalhos": ["coluna_1", "coluna_2", "coluna_3", "coluna_4"],
-    "linhas": [
-      {
-        "coluna_1": "valor_1",
-        "coluna_2": "valor_2",
-        "coluna_3": "valor_3",
-        "coluna_4": "valor_4"
+  "beneficios": [
+    {
+      "nome": "A ANNE CHRISTINE SILVA RIBEIRO",
+      "nis": "123.45678.90-1",
+      "valor_recebido": "R$ 3.900,00",
+      "tipo_beneficio": "auxilio-emergencial",
+      "url_detalhe": "https://portaldatransparencia.gov.br/beneficios/auxilio-emergencial/187235083?ordenarPor=numeroParcela&direcao=desc",
+      "tabela_detalhada": {
+        "cabecalhos": ["coluna_1", "coluna_2", "coluna_3", "coluna_4"],
+        "linhas": [
+          {
+            "coluna_1": "valor_1",
+            "coluna_2": "valor_2",
+            "coluna_3": "valor_3",
+            "coluna_4": "valor_4"
+          }
+        ]
       }
-    ]
-  },
+    }
+  ],
   "evidencia_base64": "<imagem_png_em_base64>"
 }
 ```
+
 
 O campo aceito pela API é `identificador` e pode receber nome, CPF ou NIS. Por compatibilidade, `nome` continua sendo aceito como alias de entrada.
 
@@ -320,17 +327,18 @@ O navegador padrão é `chromium`, que também é o browser instalado na imagem 
 - na tela inicial, o fluxo abre **Refine a Busca**, marca **Beneficiário de Programa Social** e consulta novamente para forçar o que o filtro seja aplicado;
 - caso a busca tenha 0 retornos, o print de evidência base64 é feito nessa tela.
 - o screenshot retornado em `evidencia_base64` é capturado **após abrir `accordion-recebimentos-recursos`;
-- os campos principais retornados no topo do JSON são:
+- os campos principais retornados no topo do JSON s?o:
   - `nome`
-  - `nis`
   - `cpf`
   - `localidade`
-  - `valor_recebido`
-- em caso de busca sem resultados, retorna erro com a mensagem:
-  - `Foram encontrados 0 resultados para o termo "...".`
+  - `nome_busca`
+  - `resultado_clicado`
+  - `url_busca`
+  - `beneficios`
+  - `evidencia_base64`
+- em caso de busca sem resultados, retorna `status` = `sem_resultados`.
 - em caso de timeout, retorna:
-  - `Não foi possível retornar os dados no tempo de resposta solicitado`
-
+  - `N?o foi poss?vel retornar os dados no tempo de resposta solicitado`
 ## Observações importantes
 
 - O fluxo usa a busca direta da pessoa física no Portal da Transparência.

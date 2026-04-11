@@ -80,16 +80,10 @@ class ConsultaScriptBeneficioResultado(BaseModel):
 class ConsultaScriptResultado(BaseModel):
     status: str
     nome: str | None = None
-    nis: str | None = None
     cpf: str | None = None
     localidade: str | None = None
-    valor_recebido: str | None = None
     nome_busca: str
     resultado_clicado: str | None = None
     url_busca: str
-    url_detalhe: str | None = None
-    mensagem: str | None = None
-    detalhe_portal: str | None = None
-    tabela_detalhada: ConsultaScriptTable | None = None
     beneficios: list[ConsultaScriptBeneficioResultado] | None = None
     evidencia_base64: str | None = None

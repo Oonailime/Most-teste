@@ -17,12 +17,12 @@ from app.consulta.common import (
     BROWSER_CHANNEL,
     build_beneficio_resumos,
     DEFAULT_WINDOWS_UA,
+    FULL_PAGE_SCREENSHOT,
     RESULT_POLL_INTERVAL_MS,
     SEARCH_URL_TEMPLATE,
     clean_table_cell,
     find_summary_value,
     get_first_present,
-    get_recebimento_summary_from_row,
     human_delay_ms,
     monotonic_deadline,
     normalize_space,
@@ -249,7 +249,7 @@ def open_recebimentos_sync(page: SyncPage, deadline: float) -> None:
 
 
 def capture_screenshot_base64_sync(page: SyncPage) -> str:
-    image_bytes = page.screenshot(full_page=True, type="png")
+    image_bytes = page.screenshot(full_page=FULL_PAGE_SCREENSHOT, type="png")
     return base64.b64encode(image_bytes).decode("utf-8")
 
 
@@ -590,16 +590,6 @@ def extract_detail_table_sync(page: SyncPage, deadline: float) -> dict[str, obje
     return {"cabecalhos": headers, "linhas": rows}
 
 
-def close_extra_pages_sync(main_page: SyncPage) -> None:
-    for extra_page in list(main_page.context.pages):
-        if extra_page is main_page:
-            continue
-        try:
-            extra_page.close()
-        except SyncError:
-            continue
-
-
 def close_all_pages_sync(page: SyncPage) -> None:
     for opened_page in list(page.context.pages):
         try:
@@ -613,24 +603,19 @@ def extract_beneficio_detail_sync(
     detail_url: str,
     deadline: float,
 ) -> dict[str, object]:
-    detail_page = page.context.new_page()
-    try:
-        apply_stealth_sync(detail_page)
-        detail_page.goto(
-            detail_url,
-            wait_until="domcontentloaded",
-            timeout=remaining_timeout_ms(deadline),
-        )
-        wait_for_any_visible_sync(detail_page, BENEFICIO_DETAIL_READY_SELECTORS, deadline)
-        if detail_url not in detail_page.url and "/beneficios/" not in detail_page.url:
-            raise RuntimeError("A navegacao para o detalhe do beneficio nao ocorreu.")
-        tabela_detalhada = extract_detail_table_sync(detail_page, deadline)
-        return {
-            "url_detalhe": detail_page.url,
-            "tabela_detalhada": tabela_detalhada,
-        }
-    finally:
-        detail_page.close()
+    page.goto(
+        detail_url,
+        wait_until="domcontentloaded",
+        timeout=remaining_timeout_ms(deadline),
+    )
+    wait_for_any_visible_sync(page, BENEFICIO_DETAIL_READY_SELECTORS, deadline)
+    if detail_url not in page.url and "/beneficios/" not in page.url:
+        raise RuntimeError("A navegacao para o detalhe do beneficio nao ocorreu.")
+    tabela_detalhada = extract_detail_table_sync(page, deadline)
+    return {
+        "url_detalhe": page.url,
+        "tabela_detalhada": tabela_detalhada,
+    }
 
 
 def run_consulta_script_sync(request: ConsultaScriptRequest) -> ConsultaScriptResultado:
@@ -673,22 +658,12 @@ def run_consulta_script_sync(request: ConsultaScriptRequest) -> ConsultaScriptRe
                     nome_busca=request.identificador,
                     url_busca=search_url,
                     evidencia_base64=capture_screenshot_base64_sync(page),
-                    mensagem=(
-                        f'O identificador pesquisado "{request.identificador}" '
-                        "não possui nenhum benefício registrado."
-                    ),
-                    detalhe_portal=(
-                        f'Foram encontrados 0 resultados para o termo "{request.identificador}".'
-                    ),
                 )
 
             nome_resultado = click_first_result_sync(page, deadline)
             person_summary = extract_person_summary_sync(page)
             open_recebimentos_sync(page, deadline)
             recebimento_rows = extract_recebimento_rows_sync(page, deadline)
-            recebimento_summary = get_recebimento_summary_from_row(
-                recebimento_rows[0] if recebimento_rows else {}
-            )
             beneficio_links = extract_beneficio_links_sync(page, deadline)
             evidencia_base64 = capture_screenshot_base64_sync(page)
             beneficios_resumo = build_beneficio_resumos(
@@ -704,7 +679,6 @@ def run_consulta_script_sync(request: ConsultaScriptRequest) -> ConsultaScriptRe
                         **extract_beneficio_detail_sync(page, beneficio["url_detalhe"], deadline),
                     }
                 )
-                close_extra_pages_sync(page)
 
             return ConsultaScriptResultado(
                 status="sucesso",
