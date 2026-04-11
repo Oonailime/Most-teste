@@ -259,13 +259,13 @@ def open_recebimentos_sync(page: SyncPage, deadline: float) -> None:
                 raise
 
 
-# Captura screenshot da pagina e retorna em base64.
+# Captura screenshot da pagina e retorna em base64!
 def capture_screenshot_base64_sync(page: SyncPage) -> str:
     image_bytes = page.screenshot(full_page=FULL_PAGE_SCREENSHOT, type="png")
     return base64.b64encode(image_bytes).decode("utf-8")
 
 
-# Extrai nome, CPF e localidade da pagina da pessoa.
+# Extrai nome, CPF e localidade da pagina da pessoa!
 def extract_person_summary_sync(page: SyncPage) -> dict[str, str | None]:
     sections = page.locator("section.dados-tabelados")
     count = sections.count()
@@ -533,7 +533,7 @@ def extract_all_table_rows_sync(
     return headers, rows
 
 
-# Extrai as linhas da tabela de recebimentos.
+# Extrai as linhas da tabela de recebimentos!
 def extract_recebimento_rows_sync(page: SyncPage, deadline: float) -> list[dict[str, str]]:
     accordion = page.locator("#accordion-recebimentos-recursos").first
     accordion.wait_for(state="visible", timeout=remaining_timeout_ms(deadline))
@@ -695,10 +695,16 @@ def run_consulta_script_sync(request: ConsultaScriptRequest) -> ConsultaScriptRe
 
             nome_resultado = click_first_result_sync(page, deadline)
             person_summary = extract_person_summary_sync(page)
+
+            # Abre o accordion de recebimentos e espera o conteudo aparecer.
             open_recebimentos_sync(page, deadline)
+            
+            # Extrai as linhas da tabela de recebimentos.
             recebimento_rows = extract_recebimento_rows_sync(page, deadline)
             beneficio_links = extract_beneficio_links_sync(page, deadline)
+            
             evidencia_base64 = capture_screenshot_base64_sync(page)
+            # Alinha cada link de benefício com a linha da tabela de recebimentos pelo índice
             beneficios_resumo = build_beneficio_resumos(
                 rows=recebimento_rows,
                 detail_links=beneficio_links,
